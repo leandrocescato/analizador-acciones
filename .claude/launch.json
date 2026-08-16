@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "analizador",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["scripts/dev_server.py"],
+      "port": 8502,
+      "autoPort": true
+    }
+  ]
+}

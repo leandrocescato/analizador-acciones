@@ -1,0 +1,19 @@
+# Configuracion de la app. Se aplica igual en la laptop y en la nube.
+
+[server]
+# Escuchar en todas las interfaces: sin esto la app solo se ve desde la propia
+# maquina, y no se podria entrar desde el telefono ni siquiera por Wi-Fi.
+address = "0.0.0.0"
+headless = true
+
+[browser]
+gatherUsageStats = false
+
+[theme]
+base = "light"
+primaryColor = "#1f6fb2"
+
+[client]
+# Los errores se muestran completos: esto lo usa una sola persona y saber que
+# fallo vale mas que esconderlo.
+showErrorDetails = true

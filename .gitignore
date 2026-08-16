@@ -1,0 +1,19 @@
+# TUS DATOS. El repositorio de Streamlit Community Cloud es PUBLICO: lo que
+# entre aca lo puede leer cualquiera. En `datos/` viven tus tesis, tu historial
+# de mediciones y tu lista de empresas. Nada de eso se sube.
+datos/
+
+# Secretos: claves de acceso y token de GitHub. Se cargan desde el panel de
+# Streamlit Cloud, nunca desde el repositorio.
+.streamlit/secrets.toml
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# Sistema
+.DS_Store
+Thumbs.db
