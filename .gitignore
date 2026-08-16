@@ -7,6 +7,10 @@ datos/
 # Streamlit Cloud, nunca desde el repositorio.
 .streamlit/secrets.toml
 
+# Configuracion local de las herramientas de desarrollo: no le sirve a nadie
+# mas y expone rutas de esta maquina.
+.claude/settings.local.json
+
 # Python
 __pycache__/
 *.py[cod]

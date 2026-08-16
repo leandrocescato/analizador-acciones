@@ -90,6 +90,7 @@ def _email_sec() -> str:
             return str(valor)
     except Exception:
         pass
+    # Respaldo para uso local. En la nube va por secretos: ver DESPLIEGUE.md.
     return "leandro.cescato@gmail.com"
 
 

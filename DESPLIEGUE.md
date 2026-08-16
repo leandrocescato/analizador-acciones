@@ -62,11 +62,26 @@ Eso no tiene que devolver nada. `datos/` está en `.gitignore`: ahí viven tu
 `cache.db` con las tesis y el historial, y tu `universo.txt`. Si aparece algo,
 pará y avisame.
 
-Después creá un repositorio en GitHub y subilo:
+Después creá un repositorio en GitHub y subilo. **Cambiá `TU-USUARIO` por el
+tuyo** antes de pegar:
+
+```bash
+git branch -M main
+```
 
 ```bash
 git remote add origin https://github.com/TU-USUARIO/analizador-acciones.git
+```
+
+```bash
 git push -u origin main
+```
+
+Si `git remote add` responde *"remote origin already exists"*, es que ya había
+uno configurado. No lo agregues de nuevo: corregí el que está.
+
+```bash
+git remote set-url origin https://github.com/TU-USUARIO/analizador-acciones.git
 ```
 
 ---
