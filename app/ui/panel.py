@@ -113,6 +113,18 @@ def _columnas_de_vista(nombre: str) -> list[str]:
     return [c for c in VISTAS.get(nombre, ESENCIAL) if c in base.REGISTRO]
 
 
+def _cambio_de_vista() -> None:
+    """Elegir otra vista reemplaza la seleccion de columnas."""
+    nueva = st.session_state["vista_panel"]
+    st.session_state["_vista"] = nueva
+    st.session_state["_columnas"] = _columnas_de_vista(nueva)
+
+
+def _cambio_de_columnas() -> None:
+    """Agregar o sacar indicadores a mano no cambia la vista elegida."""
+    st.session_state["_columnas"] = list(st.session_state["cols_visibles"])
+
+
 def _fila(emp, metricas: dict) -> dict:
     fila = {
         "Ticker": emp.ticker,
@@ -243,24 +255,46 @@ def render():
             st.rerun()
 
         st.subheader("Columnas")
-        vista = st.selectbox(
-            "Vista", list(VISTAS), key="vista_panel",
+
+        # LA ELECCION DE COLUMNAS VIVE EN UNA CLAVE QUE NO ES DE WIDGET
+        # ------------------------------------------------------------
+        # Streamlit descarta el estado de todo widget que no se haya dibujado
+        # durante una corrida. Y `st.rerun()` corta el script donde esta: el
+        # alta de tickers lo llama ANTES de esta barra lateral, asi que estos
+        # dos widgets no llegaban a dibujarse y su estado se perdia. La tabla
+        # quedaba con las cuatro columnas fijas y ninguna metrica, y no se
+        # recuperaba sola porque la vista seguia siendo la misma.
+        #
+        # `_vista` y `_columnas` son claves comunes de session_state: nadie las
+        # limpia. Los widgets se siembran desde ellas en cada corrida y les
+        # devuelven lo que elegiste.
+        st.session_state.setdefault("_vista", VISTA_INICIAL)
+        st.session_state.setdefault("_columnas", _columnas_de_vista(VISTA_INICIAL))
+
+        # El espejo se actualiza en callbacks, que Streamlit corre ANTES de
+        # volver a ejecutar el script. Hacerlo despues del widget no sirve:
+        # cuando tocas el selector, la corrida siguiente empieza sembrando el
+        # widget con el valor viejo y tu eleccion se pierde antes de leerse.
+        # Y se siembran los widgets desde el espejo: si en la corrida anterior
+        # no llegaron a dibujarse, su estado no existe y hay que reponerlo.
+        st.session_state["vista_panel"] = st.session_state["_vista"]
+        st.session_state["cols_visibles"] = list(st.session_state["_columnas"])
+
+        st.selectbox(
+            "Vista", list(VISTAS), key="vista_panel", on_change=_cambio_de_vista,
             help="Cada vista trae las columnas que contestan una pregunta. "
                  "Esencial alcanza para barrer el universo; las otras son para "
                  "cuando ya tenes una candidata y queres profundizar un angulo.",
         )
-        # Al cambiar de vista se reemplaza la seleccion. Se escribe el estado
-        # del multiselect ANTES de crearlo, que es la unica forma de moverlo
-        # por codigo sin que Streamlit se queje.
-        if st.session_state.get("_vista_aplicada") != vista:
-            st.session_state["_vista_aplicada"] = vista
-            st.session_state["cols_visibles"] = _columnas_de_vista(vista)
-
-        visibles = st.multiselect(
+        st.multiselect(
             "Indicadores", list(base.REGISTRO), key="cols_visibles",
+            on_change=_cambio_de_columnas,
             format_func=lambda c: f"{base.REGISTRO[c].nombre}  ({base.REGISTRO[c].grupo})",
             help="Sobre la vista elegida podes agregar o sacar lo que quieras.",
         )
+
+    vista = st.session_state["_vista"]
+    visibles = list(st.session_state["_columnas"])
 
     if not universo:
         st.info("Agrega tickers en la barra lateral para empezar.")
