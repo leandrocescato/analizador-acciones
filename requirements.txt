@@ -2,7 +2,6 @@
 # horizontales, width="stretch" y el formato compacto de NumberColumn.
 streamlit>=1.57
 pandas>=2.0
-numpy>=1.24
 plotly>=5.20
 yfinance>=0.2.40
 requests>=2.31

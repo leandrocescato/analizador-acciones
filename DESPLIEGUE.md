@@ -62,8 +62,24 @@ Eso no tiene que devolver nada. `datos/` está en `.gitignore`: ahí viven tu
 `cache.db` con las tesis y el historial, y tu `universo.txt`. Si aparece algo,
 pará y avisame.
 
-Después creá un repositorio en GitHub y subilo. **Cambiá `TU-USUARIO` por el
-tuyo** antes de pegar:
+### Crear el repositorio en GitHub
+
+Este paso va **antes** de los comandos de abajo, y es el que más se saltea:
+`git remote add` solo anota una URL en tu máquina, no crea nada del otro lado.
+Si falta, el push responde *"Repository not found"*.
+
+1. **https://github.com/new**
+2. **Repository name**: `analizador-acciones`
+3. **No marques** *Add a README file*, ni `.gitignore`, ni licencia. Si GitHub
+   lo crea con un commit adentro, tu push se rechaza por historias divergentes
+4. Probá con **Private**: Streamlit Community Cloud acepta repositorios
+   privados en el plan gratuito, con un tope de apps privadas. Si al desplegar
+   no te lo permite, pasarlo a público es un clic en *Settings → Change
+   visibility*
+
+### Subirlo
+
+**Cambiá `TU-USUARIO` por el tuyo** antes de pegar:
 
 ```bash
 git branch -M main
