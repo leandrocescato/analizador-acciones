@@ -72,7 +72,7 @@ la vista elegida podés seguir agregando o sacando indicadores a mano.
 
 | Vista | Para qué | Cols. |
 |---|---|---|
-| **Esencial** *(inicial)* | Barrer el universo: dónde está parada, qué tan buena es, cuánto cuesta, si aguanta | 15 |
+| **Esencial** *(inicial)* | Barrer el universo: dónde está parada, qué tan buena es, cuánto cuesta, si aguanta | 19 |
 | **Valuación** | Cuánto cuesta, por todos los ángulos: múltiplos, yields, NCAV, EPV | 15 |
 | **Calidad y caja** | ROIC, márgenes, conversión a caja, accruals, dilución por SBC | 12 |
 | **Solidez y riesgo** | Deuda, coberturas, Altman, Beneish, años en rojo | 11 |
@@ -91,7 +91,7 @@ screening y nada más:
    máximo histórico
 2. **Qué tan buena es** — ROIC y ROIC promedio 5a, ROE, margen operativo contra
    su propio promedio de 10 años, crecimiento de ingresos 5a
-3. **Cuánto cuesta** — PER, EV/EBITDA, EV/EBIT, FCF Yield
+3. **Cuánto cuesta** — EPS, PER, PER Forward, EV/EBITDA, EV/EBIT, FCF Yield
 4. **Si aguanta** — Deuda neta/EBITDA, Piotroski
 
 Dos pares se leen juntos y por eso están los dos: **ROIC actual contra su
@@ -375,6 +375,28 @@ importan:
 
 Los emisores extranjeros (20-F) **no tienen vista trimestral**: reportan sus
 trimestres por formulario 6-K, que es texto libre sin datos estructurados.
+
+### Hay una tercera categoría de dato: el consenso
+
+Casi todo en esta app es un hecho auditado o una cotización. Tres indicadores no
+lo son, y están marcados **(est.)** en el nombre: **PER Forward**, **Ingresos
+NTM** y **EPS NTM**. Son lo que un grupo de analistas *espera*, publicado por
+Yahoo, referido al próximo ejercicio fiscal completo.
+
+Van los tres sobre la misma base para que se puedan leer juntos, y cada uno
+avisa en su tooltip que es una estimación. Importan por dos comparaciones:
+
+- **PER contra PER Forward** — cuánto del precio de hoy depende de que esas
+  expectativas se cumplan. Si el PER es 45x y el forward 18x, el mercado ya
+  está pagando por una duplicación de ganancias que todavía no ocurrió.
+- **Crecimiento histórico contra el estimado** — por eso las dos columnas NTM
+  van pegadas al CAGR de 5 años. Accenture creció 9,5% anual y el consenso
+  proyecta 4,1%: esa brecha es la tesis. Al revés también: si viene creciendo
+  al 3% y proyectan 15%, alguien tiene que explicar de dónde sale la
+  aceleración.
+
+El consenso tiende a ser optimista y se revisa a la baja al acercarse la fecha.
+Léelo como el mejor escenario, no como el probable.
 
 ### EDGAR para fundamentals, Yahoo solo para mercado
 

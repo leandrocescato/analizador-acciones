@@ -222,7 +222,8 @@ SUPRIMIDAS: dict[str, frozenset[str]] = {
         _CAPITAL_INVERTIDO | _MODELOS_INDUSTRIALES
         # La amortizacion contable deprime la ganancia neta de un REIT muy por
         # debajo de su caja real: el PER y todo lo derivado de EBIT engañan.
-        | {"per", "per_normalizado", "peg", "earnings_yield", "epv", "ev_ebit",
+        | {"per", "per_normalizado", "per_forward", "peg", "earnings_yield",
+           "epv", "ev_ebit",
            "precio_vs_ncav", "margen_bruto", "rotacion_activos",
            "dio", "ciclo_caja", "capex_dya",
            "fcf_conversion", "fcf_conversion_prom5", "accruals_sloan",

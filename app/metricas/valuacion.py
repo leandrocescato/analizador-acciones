@@ -210,3 +210,23 @@ def epv(e):
     valor_equity = resta(suma(valor_operativo, e.f("caja_total")), e.f("deuda_total"))
     return div(valor_equity, e.market_cap)
 
+
+
+@metrica("per_forward", "PER Forward (est.)", "Valuacion", formato="x", panel=True,
+         mejor="bajo", umbrales=(12, 30),
+         formula="Precio / ganancia por accion estimada para el proximo "
+                 "ejercicio, segun el consenso que publica Yahoo Finance.",
+         ayuda="OJO: NO es un dato reportado, es lo que un grupo de analistas "
+               "espera. Es la unica familia de numeros de esta app que no sale "
+               "de un balance auditado. Sirve para ver cuanto del precio actual "
+               "depende de que esas expectativas se cumplan: si el PER es 30x y "
+               "el forward 15x, el mercado esta pagando por una duplicacion de "
+               "ganancias que todavia no ocurrio. El consenso tiende a ser "
+               "optimista y se revisa a la baja al acercarse la fecha, asi que "
+               "leelo como el mejor escenario, no como el probable.")
+def per_forward(e):
+    valor = e.mercado.get("per_forward")
+    if valor is None:
+        # Respaldo: el EPS estimado contra el precio de hoy.
+        valor = div(e.mercado.get("precio"), e.mercado.get("eps_forward"))
+    return None if valor is None or valor < 0 else valor

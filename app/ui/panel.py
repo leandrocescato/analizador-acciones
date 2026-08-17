@@ -33,13 +33,20 @@ from . import comun, exportar
 ESENCIAL = [
     # Donde esta parada: el disparador contrarian.
     "precio", "market_cap", "dist_max52", "drawdown_max",
-    # Cuanto cuesta y con que rentabilidad. ROIC actual contra su promedio de
-    # 5 años se leen enfrentados: si el actual esta muy por debajo, el
-    # deterioro ya empezo. EV/EBITDA contra EV/EBIT, igual: la diferencia entre
-    # los dos es cuanto pesa la amortizacion en el negocio.
-    "per", "roic", "roic_prom_5a", "roe", "ev_ebitda", "ev_ebit",
-    # Si aguanta, y si el castigo ya aparece en los numeros.
-    "deuda_neta_ebitda", "margen_op_vs_prom", "cagr_ingresos_5a",
+    # Cuanto cuesta y con que rentabilidad. El PER va entre el EPS que lo
+    # explica y el forward que dice cuanto del precio depende de que el
+    # consenso acierte. ROIC actual contra su promedio de 5 años se leen
+    # enfrentados: si el actual esta muy por debajo, el deterioro ya empezo.
+    # EV/EBITDA contra EV/EBIT, igual: la diferencia entre los dos es cuanto
+    # pesa la amortizacion en el negocio.
+    "eps", "per", "per_forward",
+    "roic", "roic_prom_5a", "roe", "ev_ebitda", "ev_ebit",
+    # Si aguanta, y si el castigo ya aparece en los numeros. Las dos
+    # estimaciones NTM van pegadas al crecimiento historico a proposito: solas
+    # no dicen nada, y enfrentadas muestran cuanta aceleracion esta dando por
+    # descontada el consenso.
+    "deuda_neta_ebitda", "margen_op_vs_prom",
+    "cagr_ingresos_5a", "crec_ingresos_ntm", "crec_eps_ntm",
     "fcf_yield", "piotroski",
 ]
 

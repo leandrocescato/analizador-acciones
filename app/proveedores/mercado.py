@@ -138,7 +138,49 @@ def _de_info(t: yf.Ticker) -> dict:
         "market_cap_info": _sin_nan(info.get("marketCap")),
         "pais": info.get("country"),
         "empleados": info.get("fullTimeEmployees"),
+        # --- CONSENSO DE ANALISTAS, no dato reportado.
+        # Es una tercera categoria de dato: no es un hecho auditado de EDGAR ni
+        # una cotizacion. Es lo que un grupo de analistas espera que pase, y en
+        # promedio se revisa a la baja a medida que se acerca la fecha. Va
+        # etiquetado como estimacion en toda la interfaz.
+        "per_forward": _sin_nan(info.get("forwardPE")),
+        "eps_forward": _sin_nan(info.get("forwardEps")),
     }
+
+
+def _de_estimaciones(t: yf.Ticker) -> dict:
+    """Crecimiento esperado de ingresos y ganancias para el proximo ejercicio.
+
+    Se toma la fila `+1y`: el ejercicio completo siguiente contra el actual. Es
+    la misma base sobre la que Yahoo calcula su PER forward, asi que los tres
+    numeros hablan del mismo periodo y se pueden leer juntos.
+    """
+    salida = {"crec_ingresos_ntm": None, "crec_eps_ntm": None, "analistas_ntm": None}
+
+    def _crecimiento(tabla, campo="growth"):
+        try:
+            if tabla is None or tabla.empty or "+1y" not in tabla.index:
+                return None
+            valor = tabla.loc["+1y", campo]
+        except Exception:
+            return None
+        valor = _sin_nan(valor)
+        return None if valor is None else float(valor) * 100
+
+    try:
+        salida["crec_ingresos_ntm"] = _crecimiento(t.revenue_estimate)
+    except Exception:
+        pass
+    try:
+        ganancias = t.earnings_estimate
+        salida["crec_eps_ntm"] = _crecimiento(ganancias)
+        if ganancias is not None and not ganancias.empty and "+1y" in ganancias.index:
+            salida["analistas_ntm"] = _sin_nan(
+                ganancias.loc["+1y", "numberOfAnalysts"])
+    except Exception:
+        pass
+
+    return salida
 
 
 def instantanea(ticker: str) -> dict:
@@ -152,8 +194,9 @@ def instantanea(ticker: str) -> dict:
     try:
         t = yf.Ticker(ticker)
         rapido, lento = _de_fast_info(t), _de_info(t)
+        estimaciones = _de_estimaciones(t)
     except Exception:
-        rapido, lento = {}, {}
+        rapido, lento, estimaciones = {}, {}, {}
 
     serie = precios(ticker, anios=config.ANIOS_HISTORIA)
 
@@ -201,6 +244,10 @@ def instantanea(ticker: str) -> dict:
         "beta": lento.get("beta"),
         "div_yield": lento.get("div_yield"),
         "dividendo_anual": lento.get("dividendo_anual"),
+        # Consenso de analistas: estimaciones, no hechos. Ver _de_estimaciones.
+        "per_forward": lento.get("per_forward"),
+        "eps_forward": lento.get("eps_forward"),
+        **estimaciones,
         "acciones": acciones,
         "market_cap": market_cap,
         "volumen_acciones": volumen,

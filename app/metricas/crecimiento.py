@@ -144,3 +144,32 @@ def peg(e):
     if per is None or crecimiento is None or crecimiento <= 0:
         return None
     return per / crecimiento
+
+
+@metrica("crec_ingresos_ntm", "Ingresos NTM (est.)", "Crecimiento", formato="pct",
+         mejor="alto", umbrales=(10, 0), panel=True,
+         formula="Crecimiento estimado de los ingresos del proximo ejercicio "
+                 "completo contra el actual, segun el consenso de analistas "
+                 "que publica Yahoo Finance.",
+         ayuda="OJO: es una estimacion, no un dato reportado. Vale sobre todo "
+               "comparada con el crecimiento historico de la fila de al lado: "
+               "si la empresa viene creciendo al 3% y el consenso proyecta 15%, "
+               "alguien tiene que explicar de donde sale esa aceleracion, y esa "
+               "explicacion es tu tesis o es el motivo para no comprar. El "
+               "consenso se revisa a la baja mas seguido que al alza.")
+def crec_ingresos_ntm(e):
+    return e.mercado.get("crec_ingresos_ntm")
+
+
+@metrica("crec_eps_ntm", "EPS NTM (est.)", "Crecimiento", formato="pct",
+         mejor="alto", umbrales=(12, 0), panel=True,
+         formula="Crecimiento estimado de la ganancia por accion del proximo "
+                 "ejercicio completo contra el actual, segun el consenso de "
+                 "analistas que publica Yahoo Finance.",
+         ayuda="OJO: es una estimacion, no un dato reportado. Comparalo con el "
+               "crecimiento esperado de ingresos: si se espera que la ganancia "
+               "crezca mucho mas rapido que las ventas, el consenso esta "
+               "asumiendo expansion de margenes, que es el supuesto que mas "
+               "seguido falla. Si crece menos, hay dilucion o presion de costos.")
+def crec_eps_ntm(e):
+    return e.mercado.get("crec_eps_ntm")
