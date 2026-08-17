@@ -18,6 +18,7 @@ capitalizacion: ahi el dato de mercado es mas actual que el ultimo 10-K.
 from __future__ import annotations
 
 import datetime as dt
+import hashlib
 import io
 
 import pandas as pd
@@ -183,10 +184,34 @@ def _de_estimaciones(t: yf.Ticker) -> dict:
     return salida
 
 
+# Los campos que produce `instantanea()`. La firma de esta lista viaja en la
+# clave del cache, y ese es el punto: el cache guarda un diccionario cuya forma
+# la define este archivo. Cuando se le agrega un campo, las entradas guardadas
+# antes no lo tienen, y `.get()` devuelve None sin que nada avise. Pasaba con
+# el PER forward y las estimaciones NTM: tres columnas vacias durante seis
+# horas, sin ninguna pista de por que.
+#
+# Con la firma adentro de la clave, una entrada con otra forma simplemente no
+# se encuentra y se vuelve a pedir. `probar_esquema_mercado` verifica que esta
+# lista siga coincidiendo con lo que la funcion devuelve de verdad.
+CAMPOS_INSTANTANEA = (
+    "ticker", "nombre", "sector", "industria", "pais", "empleados", "moneda",
+    "precio", "cierre_previo", "var_pct", "max52", "min52", "beta",
+    "div_yield", "dividendo_anual",
+    "per_forward", "eps_forward",
+    "crec_ingresos_ntm", "crec_eps_ntm", "analistas_ntm",
+    "acciones", "market_cap", "volumen_acciones", "volumen_usd", "actualizado",
+)
+
+
+def _firma_esquema(campos) -> str:
+    return hashlib.md5(",".join(sorted(campos)).encode()).hexdigest()[:8]
+
+
 def instantanea(ticker: str) -> dict:
     """Foto de mercado del ticker. Nunca lanza: si falla, devuelve campos en None."""
     ticker = ticker.upper()
-    clave = f"mkt:{ticker}"
+    clave = f"mkt:{_firma_esquema(CAMPOS_INSTANTANEA)}:{ticker}"
     datos = cache.obtener(clave, config.TTL_MERCADO_H)
     if datos is not None:
         return datos
