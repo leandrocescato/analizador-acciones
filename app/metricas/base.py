@@ -123,10 +123,29 @@ ORDEN_GRUPOS: list[str] = [
 ]
 
 
+def _origen(fn) -> tuple[str, str]:
+    """De donde viene una funcion. Sobrevive a que el modulo se vuelva a importar."""
+    return (getattr(fn, "__module__", ""), getattr(fn, "__qualname__", ""))
+
+
 def metrica(clave, nombre, grupo, **kw):
     def decorador(fn):
-        if clave in REGISTRO:
-            raise ValueError(f"Metrica duplicada: {clave}")
+        # Registrar dos veces LA MISMA funcion no es un error: es que el modulo
+        # se volvio a importar. Pasa cuando un import se corta por la mitad
+        # —Streamlit interrumpe el script si refrescas la pagina mientras
+        # arranca— y Python descarta ese modulo pero conserva los que si
+        # terminaron. En el siguiente intento el modulo caido se ejecuta de
+        # nuevo contra un REGISTRO ya poblado.
+        #
+        # Antes eso rompia la app para siempre con "Metrica duplicada", que
+        # ademas tapaba el error original. Lo que si sigue siendo un error es
+        # que DOS funciones distintas peleen por la misma clave.
+        previa = REGISTRO.get(clave)
+        if previa is not None and _origen(previa.fn) != _origen(fn):
+            raise ValueError(
+                f"Metrica duplicada: '{clave}' la definen "
+                f"{'.'.join(_origen(previa.fn))} y {'.'.join(_origen(fn))}. "
+                "Cada indicador necesita su propia clave.")
         REGISTRO[clave] = Metrica(
             clave=clave, nombre=nombre, grupo=grupo, fn=fn,
             descripcion=kw.pop("descripcion", "") or (fn.__doc__ or "").strip(),
