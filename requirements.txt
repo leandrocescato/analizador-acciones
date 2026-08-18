@@ -3,7 +3,10 @@
 streamlit>=1.57
 pandas>=2.0
 plotly>=5.20
-yfinance>=0.2.40
+# >=1.0 por `revenue_estimate` y `earnings_estimate`, que son de donde salen
+# las estimaciones de consenso. Con una version anterior esas columnas quedan
+# vacias y el diagnostico del Detalle lo dice.
+yfinance>=1.0
 requests>=2.31
 certifi
 XlsxWriter>=3.2

@@ -166,10 +166,12 @@ def _bloque_encabezado(emp, met: dict, clas: dict):
     izq, der = st.columns([3, 2])
     with izq:
         st.title(f"{emp.ticker} — {emp.nombre}")
-        st.caption(
-            f"{emp.sector or 's/d'} · {emp.industria or 's/d'} · CIK {emp.cik} · "
-            f"{len(emp.anios)} ejercicios ({emp.anios[0]}-{emp.anios[-1]})"
-        )
+        # Lo que no hay no se anuncia: una ficha sembrada de "s/d" se lee como
+        # si la empresa fuera el problema, cuando el que falto fue el proveedor.
+        ficha = [p for p in (emp.sector, emp.industria) if p]
+        ficha.append(f"CIK {emp.cik}")
+        ficha.append(f"{len(emp.anios)} ejercicios ({emp.anios[0]}-{emp.anios[-1]})")
+        st.caption(" · ".join(ficha))
 
         # La clasificacion decide con que vara se lee todo lo que sigue.
         etiquetas = [_insignia(clas["nombre"], clas["color"])]
@@ -616,6 +618,87 @@ def _bloque_metricas(emp, met: dict):
                 })
 
 
+def _bloque_diagnostico_mercado(emp):
+    """Por que un dato de mercado viene vacio.
+
+    Los fundamentals salen de EDGAR y su ausencia se explica en la auditoria de
+    etiquetas. Los datos de mercado salen de Yahoo, que no es una API oficial y
+    falla de maneras que desde afuera parecen "la columna esta vacia". Este
+    bloque muestra que devolvio realmente y que error hubo.
+    """
+    with st.expander("Diagnostico de datos de mercado"):
+        mk = emp.mercado or {}
+        if not mk:
+            st.error("No se obtuvo ningun dato de mercado para este ticker.")
+            return
+
+        st.caption(
+            f"Fuente: Yahoo Finance vía yfinance {mk.get('version_yfinance', '?')} · "
+            f"actualizado {mk.get('actualizado', 's/d')}"
+        )
+
+        if mk.get("error_info"):
+            st.warning(
+                f"**`.info` fallo:** {mk['error_info']}\n\nSin eso no hay sector, "
+                "beta, dividendo ni PER forward. Suele pasar desde servidores: "
+                "Yahoo bloquea direcciones de centros de datos.",
+                icon=":material/cloud_off:")
+        if mk.get("error_estimaciones"):
+            st.warning(
+                f"**Las estimaciones de consenso fallaron:** "
+                f"{mk['error_estimaciones']}",
+                icon=":material/query_stats:")
+
+        filas = [
+            ("Precio", mk.get("precio")),
+            ("Market cap", mk.get("market_cap")),
+            ("Sector", mk.get("sector")),
+            ("Beta", mk.get("beta")),
+            ("Dividendo anual por accion", mk.get("dividendo_anual")),
+            ("PER forward (consenso)", mk.get("per_forward")),
+            ("EPS forward (consenso)", mk.get("eps_forward")),
+            ("Crecimiento ingresos NTM", mk.get("crec_ingresos_ntm")),
+            ("Crecimiento EPS NTM", mk.get("crec_eps_ntm")),
+            ("Analistas que cubren", mk.get("analistas_ntm")),
+            ("Moneda del consenso", mk.get("moneda_ntm")),
+            ("Moneda de la cotizacion", mk.get("moneda")),
+        ]
+        def _texto(v):
+            # Todo a texto a proposito: la columna mezcla nombres de sector con
+            # importes, y una columna de tipos mezclados no la puede serializar
+            # Arrow. Aca lo que importa es si el campo llego, no operar con el.
+            if v is None:
+                return "—"
+            if isinstance(v, float):
+                return f"{v:,.2f}"
+            return str(v)
+
+        st.dataframe(
+            pd.DataFrame(
+                [{"Campo": n, "Valor": _texto(v),
+                  "Estado": "vacio" if v is None else "ok"} for n, v in filas],
+            ),
+            hide_index=True, width="stretch")
+
+        moneda_ntm, moneda = mk.get("moneda_ntm"), mk.get("moneda")
+        if moneda_ntm and moneda and moneda_ntm != moneda:
+            st.info(
+                f"El consenso de analistas viene en **{moneda_ntm}** y la accion "
+                f"cotiza en **{moneda}**. El PER forward queda vacio a proposito: "
+                "dividir un precio por una ganancia en otra moneda da un multiplo "
+                "que parece una ganga. Los crecimientos NTM si sirven, porque son "
+                "porcentajes.",
+                icon=":material/currency_exchange:")
+
+        vacios = [n for n, v in filas if v is None]
+        if vacios and not (mk.get("error_info") or mk.get("error_estimaciones")):
+            st.caption(
+                "Los campos vacios de arriba no dieron error: Yahoo simplemente "
+                "no publica ese dato para este ticker. Es comun en empresas "
+                "chicas, ADRs y REITs poco cubiertos por analistas."
+            )
+
+
 def _bloque_auditoria(emp):
     with st.expander("Auditoria de etiquetas XBRL"):
         st.caption(
@@ -659,7 +742,10 @@ def render():
 
     with st.sidebar:
         st.subheader("Empresa")
-        opciones = ["(escribir otro)"] + universo
+        # El universo va primero y "(escribir otro)" al final: asi la opcion
+        # por defecto es la primera accion de tu panel y no un ticker de
+        # ejemplo que no seguis.
+        opciones = universo + ["(escribir otro)"]
 
         # El selector va con `key` y no con `index`. Pasarle un index calculado
         # desde el mismo estado que el widget escribe cambia su identidad en
@@ -672,11 +758,15 @@ def render():
         pendiente = st.session_state.pop("ir_a_detalle", None)
         if pendiente and pendiente in opciones:
             st.session_state["sel_detalle"] = pendiente
+        elif st.session_state.get("sel_detalle") not in opciones:
+            # Primera visita, o el ticker elegido se fue del universo.
+            st.session_state["sel_detalle"] = (
+                preseleccion if preseleccion in opciones else opciones[0])
         elegido = st.selectbox("Del universo", opciones, key="sel_detalle")
 
         if elegido == "(escribir otro)":
             elegido = st.text_input(
-                "Ticker", value=preseleccion or "ACN",
+                "Ticker", value=preseleccion or "",
                 help="Cualquier emisor de EE.UU. que reporte a la SEC, este o no "
                      "en tu universo.").strip().upper()
 
@@ -701,7 +791,7 @@ def render():
         return
 
     with st.spinner(f"Analizando {elegido}..."):
-        emp, met = comun.cargar_empresa(elegido, version)
+        emp, met = comun.cargar_una(elegido, version)
 
     if emp.error:
         st.error(emp.error)
@@ -728,6 +818,7 @@ def render():
     st.divider()
     _bloque_metricas(emp, met)
     _bloque_auditoria(emp)
+    _bloque_diagnostico_mercado(emp)
     st.divider()
     _bloque_notas(emp)
 

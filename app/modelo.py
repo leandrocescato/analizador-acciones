@@ -396,6 +396,15 @@ def cargar(ticker: str, con_mercado: bool = True) -> Empresa:
         except Exception:
             emp.mercado, emp.retornos = {}, {}
 
+    # El rubro lindo lo da Yahoo, pero sale de `.info`, que se cae seguido y
+    # dejaba el encabezado en "s/d · s/d". EDGAR trae siempre la descripcion
+    # del codigo SIC con el que la empresa presenta: es mas seca, pero nunca
+    # falta y viene de la misma fuente que los estados contables.
+    if not emp.sector and emp.sic_desc:
+        emp.sector = emp.sic_desc
+    if not emp.industria and emp.sic:
+        emp.industria = f"SIC {emp.sic}"
+
     return emp
 
 

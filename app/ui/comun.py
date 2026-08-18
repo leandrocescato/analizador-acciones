@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import streamlit as st
@@ -31,11 +32,31 @@ escribir_universo = almacen.escribir_universo
 
 # ------------------------------------------------------------------ carga
 
+def firma_catalogo() -> str:
+    """Huella del catalogo de indicadores vigente.
+
+    Viaja en la clave del cache de sesion, y ese es el punto. `st.cache_data`
+    solo invalida cuando cambia el codigo de la funcion decorada: agregar un
+    indicador en `metricas/` no la toca, asi que el diccionario guardado sigue
+    sirviendose sin la clave nueva y la columna sale vacia durante toda la TTL.
+    Es la misma trampa que el cache de mercado (`mercado._firma_esquema`), un
+    piso mas arriba: por eso arreglar solo aquel no alcanzo.
+    """
+    return hashlib.md5(",".join(sorted(base.REGISTRO)).encode()).hexdigest()[:8]
+
+
+# OJO con los nombres: `st.cache_data` excluye de la clave todo parametro que
+# empiece con guion bajo. Por eso `version` y `catalogo` van sin el.
 @st.cache_data(show_spinner=False, ttl=3600)
-def cargar_empresa(ticker: str, _version: int = 0):
-    """Carga cacheada a nivel de sesion. `_version` fuerza el refresco."""
+def cargar_empresa(ticker: str, version: int = 0, catalogo: str | None = None):
+    """Carga cacheada a nivel de sesion. `version` y `catalogo` fuerzan refresco."""
     emp = modelo.cargar(ticker)
     return emp, modelo.metricas_de(emp)
+
+
+def cargar_una(ticker: str, version: int = 0):
+    """Atajo que arma solo la firma del catalogo. Usar este, no el crudo."""
+    return cargar_empresa(ticker, version, firma_catalogo())
 
 
 def cargar_varias(tickers: list[str], version: int = 0, barra=None):
@@ -44,9 +65,11 @@ def cargar_varias(tickers: list[str], version: int = 0, barra=None):
     solo aprovechan el tiempo de descarga, no atropellan a la API."""
     resultados: dict[str, tuple] = {}
     total = len(tickers)
+    catalogo = firma_catalogo()
 
     with ThreadPoolExecutor(max_workers=4) as pool:
-        futuros = {pool.submit(cargar_empresa, t, version): t for t in tickers}
+        futuros = {pool.submit(cargar_empresa, t, version, catalogo): t
+                   for t in tickers}
         for i, fut in enumerate(as_completed(futuros), 1):
             ticker = futuros[fut]
             try:

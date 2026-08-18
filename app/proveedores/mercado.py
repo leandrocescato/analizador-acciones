@@ -123,9 +123,12 @@ def _de_info(t: yf.Ticker) -> dict:
     """`.info` trae beta y sector, pero se rompe seguido. Nunca es bloqueante."""
     try:
         info = t.info or {}
-    except Exception:
-        return {}
+    except Exception as exc:
+        return {"error_info": f"{type(exc).__name__}: {str(exc)[:120]}"}
+    if not info:
+        return {"error_info": "Yahoo devolvio `.info` vacio"}
     return {
+        "error_info": None,
         "nombre": info.get("longName") or info.get("shortName"),
         "sector": info.get("sector"),
         "industria": info.get("industry"),
@@ -155,32 +158,61 @@ def _de_estimaciones(t: yf.Ticker) -> dict:
     Se toma la fila `+1y`: el ejercicio completo siguiente contra el actual. Es
     la misma base sobre la que Yahoo calcula su PER forward, asi que los tres
     numeros hablan del mismo periodo y se pueden leer juntos.
+
+    Cuando falla, GUARDA EL MOTIVO. Estas tres estimaciones dependen de un
+    endpoint de Yahoo que no siempre responde —sobre todo desde un servidor,
+    donde la IP es compartida y la bloquean seguido—, y una columna vacia sin
+    explicacion es imposible de diagnosticar desde la interfaz.
     """
-    salida = {"crec_ingresos_ntm": None, "crec_eps_ntm": None, "analistas_ntm": None}
+    salida = {"crec_ingresos_ntm": None, "crec_eps_ntm": None,
+              "analistas_ntm": None, "eps_ntm": None, "moneda_ntm": None,
+              "error_estimaciones": None}
 
     def _crecimiento(tabla, campo="growth"):
-        try:
-            if tabla is None or tabla.empty or "+1y" not in tabla.index:
-                return None
-            valor = tabla.loc["+1y", campo]
-        except Exception:
-            return None
-        valor = _sin_nan(valor)
-        return None if valor is None else float(valor) * 100
+        if tabla is None or getattr(tabla, "empty", True):
+            return None, "Yahoo devolvio la tabla vacia"
+        if "+1y" not in tabla.index:
+            return None, f"sin fila '+1y' (periodos: {list(tabla.index)})"
+        if campo not in tabla.columns:
+            return None, f"sin columna '{campo}' (columnas: {list(tabla.columns)})"
+        valor = _sin_nan(tabla.loc["+1y", campo])
+        if valor is None:
+            return None, "el consenso para '+1y' viene sin valor"
+        return float(valor) * 100, None
 
+    motivos = []
     try:
-        salida["crec_ingresos_ntm"] = _crecimiento(t.revenue_estimate)
-    except Exception:
-        pass
+        salida["crec_ingresos_ntm"], motivo = _crecimiento(t.revenue_estimate)
+        if motivo:
+            motivos.append(f"ingresos: {motivo}")
+    except Exception as exc:
+        motivos.append(f"ingresos: {type(exc).__name__}: {str(exc)[:90]}")
+
     try:
         ganancias = t.earnings_estimate
-        salida["crec_eps_ntm"] = _crecimiento(ganancias)
+        salida["crec_eps_ntm"], motivo = _crecimiento(ganancias)
+        if motivo:
+            motivos.append(f"EPS: {motivo}")
         if ganancias is not None and not ganancias.empty and "+1y" in ganancias.index:
-            salida["analistas_ntm"] = _sin_nan(
-                ganancias.loc["+1y", "numberOfAnalysts"])
-    except Exception:
-        pass
+            if "numberOfAnalysts" in ganancias.columns:
+                salida["analistas_ntm"] = _sin_nan(
+                    ganancias.loc["+1y", "numberOfAnalysts"])
+            # El EPS esperado del ejercicio que viene. Sirve para reconstruir
+            # el PER forward cuando `.info` no responde, que es el caso mas
+            # comun desde un servidor.
+            #
+            # Se guarda con su moneda porque no siempre es la de la cotizacion:
+            # el consenso de VIST viene en pesos mexicanos (178,87) contra un
+            # precio en dolares. Dividir a ciegas daba un PER forward de 0,4x,
+            # que ademas parece un hallazgo.
+            if "avg" in ganancias.columns:
+                salida["eps_ntm"] = _sin_nan(ganancias.loc["+1y", "avg"])
+            if "currency" in ganancias.columns:
+                salida["moneda_ntm"] = str(ganancias.loc["+1y", "currency"] or "") or None
+    except Exception as exc:
+        motivos.append(f"EPS: {type(exc).__name__}: {str(exc)[:90]}")
 
+    salida["error_estimaciones"] = " · ".join(motivos) or None
     return salida
 
 
@@ -199,13 +231,30 @@ CAMPOS_INSTANTANEA = (
     "precio", "cierre_previo", "var_pct", "max52", "min52", "beta",
     "div_yield", "dividendo_anual",
     "per_forward", "eps_forward",
-    "crec_ingresos_ntm", "crec_eps_ntm", "analistas_ntm",
+    "crec_ingresos_ntm", "crec_eps_ntm", "analistas_ntm", "eps_ntm", "moneda_ntm",
     "acciones", "market_cap", "volumen_acciones", "volumen_usd", "actualizado",
+    # Por que falto lo que falto. Ver el bloque de diagnostico del Detalle.
+    "error_info", "error_estimaciones", "version_yfinance",
 )
 
 
 def _firma_esquema(campos) -> str:
     return hashlib.md5(",".join(sorted(campos)).encode()).hexdigest()[:8]
+
+
+def _per_forward(precio, eps_ntm, moneda_eps, moneda_precio):
+    """PER forward reconstruido, solo cuando las dos puntas son comparables.
+
+    Exige misma moneda arriba y abajo, y EPS esperado positivo: con ganancia
+    negativa el multiplo no significa nada.
+    """
+    if not precio or not eps_ntm or eps_ntm <= 0:
+        return None
+    if not moneda_eps or not moneda_precio:
+        return None
+    if moneda_eps.upper() != moneda_precio.upper():
+        return None
+    return precio / eps_ntm
 
 
 def instantanea(ticker: str) -> dict:
@@ -253,6 +302,14 @@ def instantanea(ticker: str) -> dict:
         or _sin_nan(rapido.get("volumen"))
     )
 
+    moneda = rapido.get("moneda") or "USD"
+    eps_ntm = estimaciones.get("eps_ntm")
+    per_derivado = _per_forward(
+        precio, eps_ntm, estimaciones.get("moneda_ntm"), moneda)
+    # El EPS estimado solo se publica si esta en la moneda de la cotizacion.
+    # Al lado del precio, un numero en otra moneda no se lee como un error.
+    eps_ntm_comparable = eps_ntm if estimaciones.get("moneda_ntm") == moneda else None
+
     resultado = {
         "ticker": ticker,
         "nombre": lento.get("nombre"),
@@ -260,7 +317,7 @@ def instantanea(ticker: str) -> dict:
         "industria": lento.get("industria"),
         "pais": lento.get("pais"),
         "empleados": lento.get("empleados"),
-        "moneda": rapido.get("moneda") or "USD",
+        "moneda": moneda,
         "precio": precio,
         "cierre_previo": previo,
         "var_pct": ((precio / previo - 1) * 100) if precio and previo else None,
@@ -270,9 +327,16 @@ def instantanea(ticker: str) -> dict:
         "div_yield": lento.get("div_yield"),
         "dividendo_anual": lento.get("dividendo_anual"),
         # Consenso de analistas: estimaciones, no hechos. Ver _de_estimaciones.
-        "per_forward": lento.get("per_forward"),
-        "eps_forward": lento.get("eps_forward"),
+        #
+        # El PER forward viene de `.info`, que es la pieza mas fragil de Yahoo.
+        # Cuando falta se reconstruye con el EPS esperado del ejercicio que
+        # viene, que llega por otro endpoint: es la misma cuenta que hace Yahoo
+        # y sobre el mismo periodo, asi que no mezcla bases.
+        "per_forward": lento.get("per_forward") or per_derivado,
+        "eps_forward": lento.get("eps_forward") or eps_ntm_comparable,
         **estimaciones,
+        "error_info": lento.get("error_info"),
+        "version_yfinance": getattr(yf, "__version__", "?"),
         "acciones": acciones,
         "market_cap": market_cap,
         "volumen_acciones": volumen,
