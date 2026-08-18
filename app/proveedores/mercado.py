@@ -234,7 +234,7 @@ CAMPOS_INSTANTANEA = (
     "crec_ingresos_ntm", "crec_eps_ntm", "analistas_ntm", "eps_ntm", "moneda_ntm",
     "acciones", "market_cap", "volumen_acciones", "volumen_usd", "actualizado",
     # Por que falto lo que falto. Ver el bloque de diagnostico del Detalle.
-    "error_info", "error_estimaciones", "version_yfinance",
+    "error_info", "error_estimaciones", "version_yfinance", "parcial",
 )
 
 
@@ -262,6 +262,13 @@ def instantanea(ticker: str) -> dict:
     ticker = ticker.upper()
     clave = f"mkt:{_firma_esquema(CAMPOS_INSTANTANEA)}:{ticker}"
     datos = cache.obtener(clave, config.TTL_MERCADO_H)
+    # Una foto incompleta vence antes. Yahoo rechaza pedidos cuando le entran
+    # varios juntos —y el Panel baja el universo entero de a cuatro hilos—, asi
+    # que basta un rechazo de un segundo para congelar columnas vacias todo el
+    # TTL. Guardar el fallo esta bien; darle la misma vida que a un dato bueno,
+    # no. Ver config.TTL_MERCADO_PARCIAL_H.
+    if datos is not None and datos.get("parcial"):
+        datos = cache.obtener(clave, config.TTL_MERCADO_PARCIAL_H)
     if datos is not None:
         return datos
 
@@ -343,6 +350,13 @@ def instantanea(ticker: str) -> dict:
         "volumen_usd": (volumen * precio) if volumen and precio else None,
         "actualizado": dt.datetime.now().isoformat(timespec="seconds"),
     }
+
+    # Se marca la foto que llego coja para que venza antes. No alcanza con
+    # mirar los campos vacios: hay tickers a los que Yahoo legitimamente no les
+    # publica consenso, y esos no tienen por que reintentarse cada 15 minutos.
+    # Lo que distingue un fallo de una ausencia es que haya habido un error.
+    resultado["parcial"] = bool(
+        resultado["error_info"] or resultado["error_estimaciones"])
 
     if precio is not None:
         cache.guardar(clave, "mercado", resultado)

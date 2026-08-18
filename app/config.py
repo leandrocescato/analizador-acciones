@@ -107,6 +107,13 @@ TTL_MERCADO_H = 6
 TTL_PRECIOS_H = 12
 TTL_CIK_H = 24 * 30
 
+# Una foto de mercado a la que le falto algo NO es la respuesta: es un fallo
+# pasajero de Yahoo, que rechaza seguido cuando le entran varios pedidos
+# juntos. Se guarda igual, para no volver a golpearlo en cada corrida, pero
+# vence rapido y se cura sola. Con el TTL normal, un rechazo de un segundo
+# dejaba tres columnas vacias durante seis horas.
+TTL_MERCADO_PARCIAL_H = 0.25
+
 # Tasa libre de riesgo por defecto para el WACC del DCF inverso.
 # Se puede sobreescribir desde la interfaz.
 TASA_LIBRE_RIESGO = 0.042

@@ -256,7 +256,16 @@ def render():
             comun.escribir_universo(texto.split("\n"))
             st.rerun()
         if col_b.button("Actualizar", width="stretch",
-                        help="Vuelve a bajar todo ignorando el cache de la sesion"):
+                        help="Vuelve a pedirle a Yahoo los datos de mercado de "
+                             "todo el universo, sin usar nada guardado. Los "
+                             "estados contables no se tocan: EDGAR solo cambia "
+                             "cuatro veces al año."):
+            # Hay que limpiar las DOS capas. `st.cache_data` guarda las
+            # metricas ya calculadas, y abajo el cache en disco guarda la foto
+            # de mercado por seis horas. Borrar solo la de arriba hacia que el
+            # boton volviera a armar el mismo resultado con los mismos datos
+            # viejos, que es exactamente no hacer nada.
+            cache.invalidar("mkt:")
             st.session_state["version_datos"] = version + 1
             st.cache_data.clear()
             st.rerun()
