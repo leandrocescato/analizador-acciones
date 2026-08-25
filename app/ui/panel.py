@@ -161,10 +161,12 @@ def _config_columnas(visibles: list[str]) -> dict:
             # importes de mercado abarcan seis ordenes de magnitud y en formato
             # largo la columna se come el ancho de tres.
             cfg[clave] = st.column_config.NumberColumn(
-                m.nombre, help=comun.texto_ayuda(clave), format="compact")
+                base.rotulo(clave), help=comun.texto_ayuda(clave),
+                format="compact")
         else:
             cfg[clave] = st.column_config.NumberColumn(
-                m.nombre, help=comun.texto_ayuda(clave), format=formato or "%.2f")
+                base.rotulo(clave), help=comun.texto_ayuda(clave),
+                format=formato or "%.2f")
     return cfg
 
 
@@ -180,13 +182,14 @@ def _filtros(df: pd.DataFrame, visibles: list[str]) -> pd.DataFrame:
             serie = pd.to_numeric(df[clave], errors="coerce").dropna()
             if serie.empty or m.formato in ("usd",):
                 continue
-            usar = st.checkbox(f"Filtrar {m.nombre}", key=f"chk_{clave}")
+            usar = st.checkbox(f"Filtrar {base.rotulo(clave)}", key=f"chk_{clave}")
             if not usar:
                 continue
             lo, hi = float(serie.min()), float(serie.max())
             if lo >= hi:
                 continue
-            rango = st.slider(m.nombre, lo, hi, (lo, hi), key=f"sld_{clave}")
+            rango = st.slider(base.rotulo(clave), lo, hi, (lo, hi),
+                              key=f"sld_{clave}")
             valores = pd.to_numeric(df[clave], errors="coerce")
             df = df[valores.isna() | valores.between(*rango)]
     return df
@@ -305,7 +308,8 @@ def render():
         st.multiselect(
             "Indicadores", list(base.REGISTRO), key="cols_visibles",
             on_change=_cambio_de_columnas,
-            format_func=lambda c: f"{base.REGISTRO[c].nombre}  ({base.REGISTRO[c].grupo})",
+            format_func=lambda c: (f"{base.rotulo(c)}  "
+                                   f"({base.rotulo_grupo(base.REGISTRO[c].grupo)})"),
             help="Sobre la vista elegida podes agregar o sacar lo que quieras.",
         )
 
@@ -353,7 +357,7 @@ def render():
     with barra_orden:
         orden_por = st.selectbox(
             "Ordenar por", ["(sin orden)"] + visibles,
-            format_func=lambda c: c if c == "(sin orden)" else base.REGISTRO[c].nombre)
+            format_func=lambda c: c if c == "(sin orden)" else base.rotulo(c))
         # Por defecto lo "mejor" queda arriba, pero en las metricas neutras (el
         # margen contra su promedio, sin ir mas lejos) lo interesante esta en el
         # extremo negativo, asi que hay que poder dar vuelta el orden.

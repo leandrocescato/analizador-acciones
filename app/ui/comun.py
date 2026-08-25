@@ -148,7 +148,13 @@ def texto_ayuda(clave: str, con_perfiles: bool = True) -> str:
     if m is None:
         return ""
 
-    partes = [f"**{m.nombre}**", "", m.ayuda or m.descripcion]
+    # Titulo en ingles, como en la tabla, y debajo el nombre en castellano.
+    # El tooltip es el unico lugar donde conviven: si el rotulo estuviera en
+    # los dos idiomas, la columna del Panel no entraria en la pantalla.
+    partes = [f"**{base.rotulo(clave)}**"]
+    if m.nombre and m.nombre != base.rotulo(clave):
+        partes.append(f"*{m.nombre}*")
+    partes += ["", m.ayuda or m.descripcion]
 
     if m.formula:
         partes += ["", f"**Como se calcula:** {m.formula}"]
@@ -168,4 +174,21 @@ def texto_ayuda(clave: str, con_perfiles: bool = True) -> str:
                            "falte el dato."]
 
     return "\n".join(partes)
+
+
+def ayuda_plana(clave: str) -> str:
+    """La misma ayuda, en texto plano, para un atributo `title` de HTML.
+
+    Donde el nombre del indicador se dibuja con markdown no hay `help=` que
+    valga: el tooltip tiene que ser un `title` nativo, y ahi no entra ni el
+    markdown ni un salto de linea con formato.
+    """
+    m = base.REGISTRO.get(clave)
+    if m is None:
+        return ""
+    partes = [m.nombre] if m.nombre != base.rotulo(clave) else []
+    texto = m.ayuda or m.descripcion
+    if texto:
+        partes.append(texto)
+    return " — ".join(partes)
 

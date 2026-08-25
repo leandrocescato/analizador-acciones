@@ -83,7 +83,7 @@ def panel_a_excel(vista: pd.DataFrame, columnas_metrica: list[str]) -> bytes:
         # --- encabezados
         for col, nombre in enumerate(df.columns):
             metrica = base.REGISTRO.get(nombre)
-            etiqueta = metrica.nombre if metrica else nombre
+            etiqueta = base.rotulo(metrica.clave) if metrica else nombre
             hoja.write(0, col, etiqueta, f_encabezado)
             if metrica:
                 # El mismo texto que el tooltip de la pantalla, sin el markdown:

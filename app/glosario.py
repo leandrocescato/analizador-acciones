@@ -263,6 +263,173 @@ FLUJO: dict[str, tuple[str, str, str]] = {
 TODOS: dict[str, tuple[str, str, str]] = {**RESULTADOS, **BALANCE, **FLUJO}
 
 
+# ------------------------------------------------------------------ indicadores
+#
+# El nombre en ingles de cada indicador del catalogo. Aca va SOLO el rotulo: la
+# version en castellano ya vive en `metricas/base.REGISTRO[clave].nombre`, y
+# duplicarla seria pedir que un dia digan cosas distintas. El tooltip toma el
+# ingles de aca y el castellano de alla.
+#
+# Se usa la terminologia de un informe en ingles, no una traduccion literal:
+# "Cobertura de intereses" es Interest Coverage, no "Interest Cover"; el ratio
+# de siniestralidad de una aseguradora es el Loss Ratio.
+
+METRICAS: dict[str, str] = {
+    # --- Mercado
+    "precio": "Price",
+    "var_pct": "Daily Change %",
+    "max52": "52-Week High",
+    "min52": "52-Week Low",
+    "dist_max52": "% Below 52-Week High",
+    "pos_rango52": "52-Week Range Position",
+    "drawdown_max": "Drawdown from All-Time High",
+    "ret_1a": "1-Year Return",
+    "ret_3a": "3-Year Return",
+    "ret_5a": "5-Year Return",
+    "beta": "Beta",
+    "market_cap": "Market Cap",
+    "ev": "Enterprise Value",
+    "volumen_usd": "Daily Dollar Volume",
+    "eps": "EPS",
+    # --- Valuacion
+    "per": "P/E",
+    "per_normalizado": "Normalized P/E (10Y)",
+    "ev_ebit": "EV / EBIT",
+    "ev_ebitda": "EV / EBITDA",
+    "ev_fcf": "EV / FCF",
+    "ev_ventas": "EV / Sales",
+    "fcf_yield": "FCF Yield",
+    "fcf_yield_post_sbc": "FCF Yield after SBC",
+    "earnings_yield": "Earnings Yield (Greenblatt)",
+    "p_vl": "Price / Book",
+    "p_vl_tangible": "Price / Tangible Book",
+    "div_yield": "Dividend Yield",
+    "shareholder_yield": "Shareholder Yield",
+    "precio_vs_ncav": "Price / NCAV",
+    "epv": "EPV / Market Cap",
+    "per_forward": "Forward P/E (est.)",
+    # --- Rentabilidad
+    "roic": "ROIC",
+    "roic_prom_5a": "5-Year Average ROIC",
+    "roic_ex_gw": "ROIC ex-Goodwill",
+    "roic_incremental": "Incremental ROIC (5Y)",
+    "roce": "ROCE",
+    "roe": "ROE",
+    "roa": "ROA",
+    "margen_bruto": "Gross Margin",
+    "margen_operativo": "Operating Margin",
+    "margen_neto": "Net Margin",
+    "margen_op_prom10": "10-Year Average Operating Margin",
+    "margen_op_vs_prom": "Operating Margin vs 10Y Average",
+    "estabilidad_margen": "Operating Margin Volatility (10Y)",
+    "rotacion_activos": "Asset Turnover",
+    # --- Caja
+    "fcf_margen": "FCF Margin",
+    "fcf_conversion": "FCF / Net Income",
+    "fcf_conversion_prom5": "5-Year Average FCF Conversion",
+    "accruals_sloan": "Accruals Ratio (Sloan)",
+    "capex_ventas": "CapEx / Sales",
+    "capex_dya": "CapEx / D&A",
+    "dso": "Days Sales Outstanding (DSO)",
+    "dio": "Days Inventory Outstanding (DIO)",
+    "dpo": "Days Payable Outstanding (DPO)",
+    "ciclo_caja": "Cash Conversion Cycle",
+    "sbc_ingresos": "SBC / Revenue",
+    "sbc_fcf": "SBC / FCF",
+    # --- Solidez
+    "caja_neta": "Net Cash Position",
+    "deuda_neta_ebitda": "Net Debt / EBITDA",
+    "cobertura_intereses": "Interest Coverage",
+    "deuda_patrimonio": "Debt / Equity",
+    "liquidez_corriente": "Current Ratio",
+    "liquidez_acida": "Quick Ratio",
+    "anios_deuda_fcf": "Years of FCF to Repay Debt",
+    "altman_z": "Altman Z-Score",
+    "deuda_sobre_ev": "Total Debt / EV",
+    "meses_de_caja": "Months of Cash",
+    # --- Capital
+    "wacc": "Estimated WACC",
+    "spread_roic_wacc": "ROIC − WACC Spread",
+    "var_acciones_5a": "5-Year Change in Share Count",
+    "var_acciones_10a": "10-Year Change in Share Count",
+    "payout": "Dividend Payout Ratio",
+    "payout_fcf": "Dividend Payout / FCF",
+    "recompras_sobre_fcf": "Buybacks / FCF",
+    "reinversion": "Reinvestment Rate",
+    "caja_devuelta_5a": "Cash Returned to Shareholders (5Y)",
+    "goodwill_sobre_activo": "Goodwill / Total Assets",
+    "payout_real": "Total Payout (Dividends + Buybacks)",
+    # --- Crecimiento
+    "cagr_ingresos_5a": "Revenue CAGR (5Y)",
+    "cagr_ingresos_10a": "Revenue CAGR (10Y)",
+    "cagr_ebit_5a": "EBIT CAGR (5Y)",
+    "cagr_fcf_5a": "FCF CAGR (5Y)",
+    "cagr_eps_5a": "EPS CAGR (5Y)",
+    "cagr_patrimonio_5a": "Book Value CAGR (5Y)",
+    "aceleracion_ingresos": "Revenue Growth Acceleration",
+    "regla_40": "Rule of 40",
+    "peg": "PEG",
+    "crec_ingresos_ntm": "Revenue Growth NTM (est.)",
+    "crec_eps_ntm": "EPS Growth NTM (est.)",
+    # --- Señales
+    "piotroski": "Piotroski F-Score",
+    "beneish_m": "Beneish M-Score",
+    "anios_con_perdida": "Years with a Loss (15Y)",
+    "anios_fcf_negativo": "Years with Negative FCF (15Y)",
+    "cobertura_datos": "Data Coverage",
+    # --- Banca
+    "margen_intereses": "Net Interest Margin (NIM)",
+    "ratio_eficiencia": "Efficiency Ratio",
+    "coste_riesgo": "Cost of Risk",
+    "cobertura_reservas": "Allowance / Gross Loans",
+    "prestamos_depositos": "Loans / Deposits",
+    "apalancamiento": "Leverage (Assets / Equity)",
+    "peso_comisiones": "Fee Income / Revenue",
+    "cagr_depositos_5a": "Deposit CAGR (5Y)",
+    # --- Seguros
+    "ratio_combinado": "Combined Ratio",
+    "ratio_siniestralidad": "Loss Ratio",
+    "ratio_gastos": "Expense Ratio",
+    "float_sobre_cap": "Float / Market Cap",
+    "rendimiento_float": "Return on Float",
+    "cagr_primas_5a": "Premium CAGR (5Y)",
+    # --- REIT
+    "ffo": "FFO",
+    "ffo_por_accion": "FFO per Share",
+    "p_ffo": "Price / FFO",
+    "ffo_yield": "FFO Yield",
+    "payout_ffo": "Payout / FFO",
+    "deuda_sobre_inmuebles": "Debt / Real Estate at Cost",
+    "cagr_ffo_5a": "FFO CAGR (5Y)",
+}
+
+# Los grupos tambien, porque son los titulos que quedan arriba de indicadores
+# en ingles. La clave interna no cambia: esto es solo el rotulo.
+GRUPOS_EN: dict[str, str] = {
+    "Mercado": "Market",
+    "Valuacion": "Valuation",
+    "Rentabilidad": "Profitability",
+    "Caja": "Cash",
+    "Solidez": "Financial Strength",
+    "Capital": "Capital Allocation",
+    "Crecimiento": "Growth",
+    "Senales": "Signals",
+    "Banca": "Banking",
+    "Seguros": "Insurance",
+    "REIT": "REIT",
+}
+
+
+def metrica_en(clave: str) -> str | None:
+    """Rotulo en ingles de un indicador, o None si no esta traducido."""
+    return METRICAS.get(clave)
+
+
+def grupo_en(grupo: str) -> str:
+    """Rotulo en ingles de un grupo. Si falta, se devuelve tal cual."""
+    return GRUPOS_EN.get(grupo, grupo)
+
+
 def ingles(clave: str) -> str | None:
     """Rotulo en ingles, o None si el concepto no esta en el glosario."""
     entrada = TODOS.get(clave)

@@ -162,15 +162,35 @@ table.estado td .solo-delta { opacity: .85; }
 
 VISTAS_ESTADO = ["Valores", "Var %", "Ambos"]
 
+# Contra que se mide la variacion.
+#   ANTERIOR  = la columna de al lado, el periodo anterior que estas viendo.
+#   INTERANUAL = el mismo periodo del año pasado.
+# En anual las dos son lo mismo, asi que el control solo aparece en trimestral,
+# que es donde la eleccion cambia el numero.
+BASE_ANTERIOR = "Periodo anterior"
+BASE_INTERANUAL = "Mismo periodo del año anterior"
+BASES_COMPARACION = [BASE_ANTERIOR, BASE_INTERANUAL]
 
-def _columna_anterior(periodos: list, i: int) -> int | None:
+
+def _paso(periodos: list, i: int, j: int) -> bool:
+    """True si `j` es exactamente un periodo antes que `i`."""
+    (anio_i, trim_i), (anio_j, trim_j) = periodos[i], periodos[j]
+    if trim_i is None or trim_j is None:          # anual
+        return anio_j == anio_i - 1
+    if trim_i == 1:
+        return anio_j == anio_i - 1 and trim_j == 4
+    return anio_j == anio_i and trim_j == trim_i - 1
+
+
+def _columna_anterior(periodos: list, i: int,
+                      base_comp: str = BASE_ANTERIOR) -> int | None:
     """Indice de la columna contra la que se compara la columna `i`.
 
-    Anual: el ejercicio inmediatamente anterior. Trimestral: EL MISMO TRIMESTRE
-    del año anterior, no el trimestre de al lado. Comparar 1T contra 4T mide
-    estacionalidad, no negocio: cualquier minorista muestra un derrumbe del
-    30% cada primer trimestre y una explosion cada cuarto. Es un numero real
-    que responde otra pregunta.
+    Con `BASE_ANTERIOR`, la columna de al lado. Con `BASE_INTERANUAL`, el mismo
+    trimestre del año pasado, que es lo que corresponde en un negocio con
+    estacionalidad: comparar 1T contra 4T mide la temporada, no la empresa, y
+    cualquier minorista muestra un derrumbe cada primer trimestre. Las dos
+    lecturas son validas y contestan preguntas distintas, por eso se elige.
 
     En los dos casos se exige que el periodo buscado EXISTA con la distancia
     exacta. Si a la empresa le falta un ejercicio, la columna de al lado es de
@@ -178,12 +198,14 @@ def _columna_anterior(periodos: list, i: int) -> int | None:
     """
     if i <= 0 or i >= len(periodos):
         return None
-    anio, trimestre = periodos[i]
-    buscado = (anio - 1, trimestre)
-    for j in range(i - 1, -1, -1):
-        if periodos[j] == buscado:
-            return j
-    return None
+    if base_comp == BASE_INTERANUAL:
+        anio, trimestre = periodos[i]
+        buscado = (anio - 1, trimestre)
+        for j in range(i - 1, -1, -1):
+            if periodos[j] == buscado:
+                return j
+        return None
+    return i - 1 if _paso(periodos, i, i - 1) else None
 
 
 def _variacion(actual, previo) -> float | None:
@@ -210,7 +232,8 @@ def _formato_variacion(valor) -> str:
     return f"{valor:+,.1f}%"
 
 
-def _html_estado(df: pd.DataFrame, vista: str = "Valores") -> str:
+def _html_estado(df: pd.DataFrame, vista: str = "Valores",
+                 base_comp: str = BASE_ANTERIOR) -> str:
     """El estado como tabla HTML, con la traduccion colgada de cada rotulo."""
     claves = df.attrs.get("claves", [])
     periodos = df.attrs.get("periodos", [])
@@ -219,7 +242,8 @@ def _html_estado(df: pd.DataFrame, vista: str = "Valores") -> str:
 
     # De que columna sale la comparacion de cada columna. Se resuelve una sola
     # vez: es igual para todas las filas.
-    anteriores = [_columna_anterior(periodos, i) for i in range(len(df.columns))]
+    anteriores = [_columna_anterior(periodos, i, base_comp)
+                  for i in range(len(df.columns))]
 
     cabecera = "".join(f"<th>{html.escape(str(c))}</th>" for c in df.columns)
     filas = []
@@ -263,26 +287,29 @@ def _html_estado(df: pd.DataFrame, vista: str = "Valores") -> str:
 # cuatro de seis casilleros vacios: no porque falten datos, sino porque esas
 # preguntas no se le hacen a un banco. Ver perfiles.py.
 
+# Los rotulos van cortos a proposito: son tarjetas angostas y el nombre
+# completo del catalogo no entra. El nombre largo y la traduccion estan en el
+# tooltip de cada tarjeta.
 RESUMEN = {
     perfiles.GENERAL: [
-        ("dist_max52", "Desde max 52s"), ("drawdown_max", "Desde max historico"),
-        ("per", "PER"), ("fcf_yield", "FCF Yield"),
-        ("roic_prom_5a", "ROIC 5a"), ("piotroski", "Piotroski"),
+        ("dist_max52", "Below 52W High"), ("drawdown_max", "From All-Time High"),
+        ("per", "P/E"), ("fcf_yield", "FCF Yield"),
+        ("roic_prom_5a", "ROIC 5Y"), ("piotroski", "Piotroski"),
     ],
     perfiles.BANCO: [
-        ("dist_max52", "Desde max 52s"), ("drawdown_max", "Desde max historico"),
-        ("per", "PER"), ("p_vl_tangible", "Precio / VL tangible"),
-        ("roe", "ROE"), ("ratio_eficiencia", "Ratio de eficiencia"),
+        ("dist_max52", "Below 52W High"), ("drawdown_max", "From All-Time High"),
+        ("per", "P/E"), ("p_vl_tangible", "Price / Tangible Book"),
+        ("roe", "ROE"), ("ratio_eficiencia", "Efficiency Ratio"),
     ],
     perfiles.SEGUROS: [
-        ("dist_max52", "Desde max 52s"), ("drawdown_max", "Desde max historico"),
-        ("per", "PER"), ("p_vl_tangible", "Precio / VL tangible"),
-        ("roe", "ROE"), ("ratio_combinado", "Ratio combinado"),
+        ("dist_max52", "Below 52W High"), ("drawdown_max", "From All-Time High"),
+        ("per", "P/E"), ("p_vl_tangible", "Price / Tangible Book"),
+        ("roe", "ROE"), ("ratio_combinado", "Combined Ratio"),
     ],
     perfiles.REIT: [
-        ("dist_max52", "Desde max 52s"), ("drawdown_max", "Desde max historico"),
-        ("p_ffo", "Precio / FFO"), ("ffo_yield", "FFO Yield"),
-        ("div_yield", "Dividend Yield"), ("deuda_sobre_inmuebles", "Deuda / Inmuebles"),
+        ("dist_max52", "Below 52W High"), ("drawdown_max", "From All-Time High"),
+        ("p_ffo", "Price / FFO"), ("ffo_yield", "FFO Yield"),
+        ("div_yield", "Dividend Yield"), ("deuda_sobre_inmuebles", "Debt / Real Estate"),
     ],
 }
 
@@ -374,7 +401,7 @@ def _bloque_encabezado(emp, met: dict, clas: dict):
         precio = emp.mercado.get("precio")
         var = emp.mercado.get("var_pct")
         if precio:
-            st.metric("Cotizacion", f"${precio:,.2f}",
+            st.metric("Price", f"${precio:,.2f}",
                       f"{var:+.2f}%" if var is not None else None)
 
     cols = st.columns(6)
@@ -397,7 +424,10 @@ def _bloque_veredicto(emp, met: dict):
         with cols[i % 3]:
             st.markdown(
                 f"**{simbolos[estado]} {titulo}**  \n"
-                f"{base.REGISTRO[clave].nombre}: `{base.formatear(clave, valor)}`  \n"
+                f"<span title=\"{html.escape(comun.ayuda_plana(clave), quote=True)}\""
+                f" style='border-bottom:1px dotted rgba(128,128,128,.7);"
+                f"cursor:help'>{base.rotulo(clave)}</span>: "
+                f"`{base.formatear(clave, valor)}`  \n"
                 f"<span style='color:#8a8f98;font-size:0.85em'>{pregunta}</span>",
                 unsafe_allow_html=True,
             )
@@ -442,7 +472,10 @@ def _bloque_cuadro(emp, met: dict, clas: dict):
                 valor = met.get(clave)
                 estado = base.evaluar(clave, valor)
                 lineas.append(
-                    f"{simbolos[estado]} {m.nombre}  \n"
+                    f"{simbolos[estado]} "
+                    f"<span title=\"{html.escape(comun.ayuda_plana(clave), quote=True)}\""
+                    f" style='border-bottom:1px dotted rgba(128,128,128,.7);"
+                    f"cursor:help'>{base.rotulo(clave)}</span>  \n"
                     f"<span style='font-size:1.15em;font-weight:600'>"
                     f"{base.formatear(clave, valor)}</span>"
                 )
@@ -543,20 +576,33 @@ def _bloque_estados(emp):
         vista = st.segmented_control(
             "Vista", VISTAS_ESTADO, default="Valores",
             label_visibility="collapsed", key="vista_estados",
-            help="Importes, variacion contra el periodo equivalente del año "
-                 "anterior, o las dos cosas en la misma celda.")
+            help="Importes, variacion contra el periodo anterior, o las dos "
+                 "cosas en la misma celda.")
         st.caption("En millones de USD, salvo la ganancia por accion. "
                    "Fuente: SEC EDGAR.")
 
     vista = vista or "Valores"   # el segmented_control admite quedar en nada
-    _pie_estados(vista, periodicidad)
+
+    # En anual, "el periodo anterior" y "el mismo periodo del año anterior" son
+    # el mismo ejercicio: preguntar seria ofrecer una eleccion sin efecto. El
+    # control aparece solo en trimestral, que es donde cambia el numero.
+    base_comp = BASE_ANTERIOR
+    if vista != "Valores" and periodicidad == "Trimestral":
+        base_comp = st.radio(
+            "Comparar contra", BASES_COMPARACION, horizontal=True,
+            key="base_comparacion_estados",
+            help="El trimestre de al lado mide el arranque del año contra el "
+                 "cierre. El mismo trimestre del año pasado saca del medio la "
+                 "estacionalidad.") or BASE_ANTERIOR
+
+    _pie_estados(vista, periodicidad, base_comp)
     st.markdown(_CSS_ESTADOS, unsafe_allow_html=True)
 
     nombres = ["Income Statement", "Balance Sheet", "Cash Flow"]
     grupos = [ESTADO_RESULTADOS, ESTADO_BALANCE, ESTADO_FLUJO]
 
     if periodicidad == "Trimestral":
-        _estados_trimestrales(emp, nombres, grupos, vista)
+        _estados_trimestrales(emp, nombres, grupos, vista, base_comp)
         return
 
     tablas = {n: _tabla_estado(emp, claves) for n, claves in zip(nombres, grupos)}
@@ -567,30 +613,41 @@ def _bloque_estados(emp):
             if df is None:
                 st.info("Sin datos suficientes para este estado.")
                 continue
-            st.markdown(_html_estado(df, vista), unsafe_allow_html=True)
+            st.markdown(_html_estado(df, vista, base_comp),
+                        unsafe_allow_html=True)
 
     _descarga_estados(emp, tablas)
 
 
-def _pie_estados(vista: str, periodicidad: str):
+def _pie_estados(vista: str, periodicidad: str, base_comp: str):
     """Que se esta mirando y contra que se compara. Sin esto, un porcentaje
-    trimestral se lee como si fuera contra el trimestre de al lado."""
+    trimestral se lee como si fuera contra lo que uno supone."""
     partes = ["Los conceptos van en ingles, igual que en la presentacion "
               "original. Pasa el mouse por encima de cualquiera para ver la "
               "traduccion y que mide."]
     if vista != "Valores":
-        contra = ("el mismo trimestre del año anterior"
-                  if periodicidad == "Trimestral" else "el ejercicio anterior")
+        if periodicidad != "Trimestral":
+            contra = "el ejercicio anterior"
+        elif base_comp == BASE_INTERANUAL:
+            contra = "el mismo trimestre del año anterior"
+        else:
+            contra = "el trimestre inmediatamente anterior"
+        aviso = ""
+        if periodicidad == "Trimestral" and base_comp == BASE_ANTERIOR:
+            aviso = (" Ojo con la estacionalidad: en un negocio con temporada, "
+                     "el 1T contra el 4T mide el calendario y no la empresa.")
         partes.append(
-            f"**Var %** compara contra **{contra}**. El signo indica direccion, "
-            "no si la noticia es buena: en *Total Revenue* subir es una cosa y "
-            "en *Interest Expense* la contraria. Un guion quiere decir que no "
-            "hay periodo con que comparar o que la base era negativa o cero, "
-            "donde el porcentaje da vuelta la lectura en vez de resumirla.")
+            f"**Var %** compara contra **{contra}**.{aviso} El signo indica "
+            "direccion, no si la noticia es buena: en *Total Revenue* subir es "
+            "una cosa y en *Interest Expense* la contraria. Un guion quiere "
+            "decir que no hay periodo con que comparar, o que la base era "
+            "negativa o cero, donde el porcentaje da vuelta la lectura en vez "
+            "de resumirla.")
     st.caption("  \n".join(partes))
 
 
-def _estados_trimestrales(emp, nombres, grupos, vista: str = "Valores"):
+def _estados_trimestrales(emp, nombres, grupos, vista: str = "Valores",
+                          base_comp: str = BASE_ANTERIOR):
     """Los mismos estados por trimestre, con lo que EDGAR realmente permite.
 
     El flujo de caja queda afuera a proposito: en los 10-Q se presenta
@@ -633,7 +690,8 @@ def _estados_trimestrales(emp, nombres, grupos, vista: str = "Valores"):
             if df is None:
                 st.info("Sin datos suficientes para este estado.")
                 continue
-            st.markdown(_html_estado(df, vista), unsafe_allow_html=True)
+            st.markdown(_html_estado(df, vista, base_comp),
+                        unsafe_allow_html=True)
 
     cuartos = sorted({p for _, p in datos["derivados"] if p[1] == 4})
     if cuartos:
@@ -726,7 +784,11 @@ def _bloque_valuacion(emp, met: dict):
             st.warning(resultado["mensaje"])
         else:
             g = resultado["g_implicito"] * 100
-            st.metric("Crecimiento anual implicito (10 años)", f"{g:,.1f}%")
+            st.metric("Implied Annual Growth (10Y)", f"{g:,.1f}%",
+                      help="Crecimiento anual implicito a 10 años — el "
+                           "crecimiento de FCF que hace falta para justificar "
+                           "el precio de hoy. No es un pronostico: es lo que "
+                           "el mercado ya esta dando por hecho.")
             historico = met.get("cagr_fcf_5a")
             if historico is not None:
                 st.caption(
@@ -776,7 +838,7 @@ def _bloque_metricas(emp, met: dict):
         if not visibles:
             continue
         abierto = grupo in ("Rentabilidad", "Solidez") or grupo == propio
-        with st.expander(grupo, expanded=abierto):
+        with st.expander(base.rotulo_grupo(grupo), expanded=abierto):
             filas = []
             for m in visibles:
                 valor = met.get(m.clave)
@@ -789,7 +851,11 @@ def _bloque_metricas(emp, met: dict):
                     texto = base.formatear(m.clave, valor)
                 filas.append({
                     "": {"bueno": "🟢", "medio": "🟡", "malo": "🔴", "sin_dato": ""}[estado],
-                    "Indicador": m.nombre,
+                    "Indicador": base.rotulo(m.clave),
+                    # La traduccion va como columna y no como tooltip: esta
+                    # tabla ya muestra que mide y como se calcula, esconder
+                    # justo el nombre en castellano seria raro.
+                    "Traduccion": m.nombre,
                     "Valor": texto,
                     "Que mide": m.ayuda or m.descripcion,
                     "Como se calcula": m.formula,
@@ -800,6 +866,8 @@ def _bloque_metricas(emp, met: dict):
                 column_config={
                     "": st.column_config.TextColumn(width="small"),
                     "Indicador": st.column_config.TextColumn(width="medium"),
+                    "Traduccion": st.column_config.TextColumn(
+                        width="medium", help="El mismo indicador en castellano."),
                     "Valor": st.column_config.TextColumn(width="small"),
                     "Que mide": st.column_config.TextColumn(width="large"),
                     "Como se calcula": st.column_config.TextColumn(width="medium"),

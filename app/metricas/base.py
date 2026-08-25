@@ -22,7 +22,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable
 
-from .. import perfiles
+from .. import glosario, perfiles
 
 # ------------------------------------------------------------------ helpers
 
@@ -179,6 +179,25 @@ def calcular_todas(empresa) -> dict[str, float | None]:
             valor = None
         salida[clave] = valor
     return salida
+
+
+def rotulo(clave: str) -> str:
+    """Nombre visible de un indicador: en ingles, como en cualquier informe.
+
+    El castellano no desaparece: sigue siendo `Metrica.nombre` y sale en el
+    tooltip. Se resuelve aca y no en cada pantalla para que el Panel, el
+    Detalle, los filtros y el Excel no puedan llamar distinto a lo mismo.
+    """
+    en_ingles = glosario.metrica_en(clave)
+    if en_ingles:
+        return en_ingles
+    m = REGISTRO.get(clave)
+    return m.nombre if m else clave
+
+
+def rotulo_grupo(grupo: str) -> str:
+    """Nombre visible de un grupo. La clave interna no cambia."""
+    return glosario.grupo_en(grupo)
 
 
 def por_grupo() -> dict[str, list[Metrica]]:
