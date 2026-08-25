@@ -17,6 +17,7 @@ import io
 
 import pandas as pd
 
+from .. import glosario
 from ..metricas import base
 
 # Formato de Excel por tipo de metrica. La coma final en '#,##0,,' es la forma
@@ -147,19 +148,66 @@ def estados_a_excel(emp, tablas: dict[str, pd.DataFrame]) -> bytes:
             for col, anio in enumerate(df.columns, start=1):
                 hoja.write(0, col, str(anio), f_encabezado)
 
+            # Que renglon va en unidades y no en millones se decide por la
+            # CLAVE del concepto, no por su rotulo. Antes se buscaba la palabra
+            # "accion" en el texto de la fila; con los estados en ingles eso
+            # dejaba de encontrarse y la ganancia por accion salia redondeada a
+            # cero decimales, que es un dato distinto.
+            claves = df.attrs.get("claves", [])
             for fila_idx, concepto in enumerate(df.index, start=1):
                 hoja.write(fila_idx, 0, str(concepto), f_concepto)
-                # La ganancia por accion es el unico renglon que no va en millones.
-                formato = f_unitario if "accion" in str(concepto).lower() else f_millones
+                clave = claves[fila_idx - 1] if fila_idx - 1 < len(claves) else ""
+                unitario = clave in ("eps_diluido", "eps_basico")
+                formato = f_unitario if unitario else f_millones
                 for col, anio in enumerate(df.columns, start=1):
-                    valor = df.loc[concepto, anio]
+                    valor = df.iloc[fila_idx - 1, col - 1]
                     if valor is None or pd.isna(valor):
                         hoja.write_blank(fila_idx, col, None)
                     else:
                         hoja.write_number(fila_idx, col, float(valor), formato)
 
-            hoja.set_column(0, 0, 34)
+            hoja.set_column(0, 0, 38)
             hoja.set_column(1, len(df.columns), 13)
             hoja.freeze_panes(1, 1)
 
+        _hoja_glosario(writer, libro, tablas, f_encabezado, f_concepto)
+
     return buffer.getvalue()
+
+
+def _hoja_glosario(writer, libro, tablas, f_encabezado, f_concepto):
+    """La traduccion tiene que viajar con el archivo.
+
+    En pantalla el significado esta en el tooltip de cada fila, pero un Excel
+    descargado se abre en otra maquina y meses despues. Sin esta hoja, el
+    archivo queda en un idioma y sin ninguna explicacion.
+    """
+    vistos, filas = set(), []
+    for df in tablas.values():
+        if df is None or df.empty:
+            continue
+        for clave in df.attrs.get("claves", []):
+            entrada = glosario.TODOS.get(clave)
+            if entrada is None or clave in vistos:
+                continue
+            vistos.add(clave)
+            filas.append(entrada)
+
+    if not filas:
+        return
+
+    hoja = libro.add_worksheet("Glosario")
+    writer.sheets["Glosario"] = hoja
+    ajuste = libro.add_format({"text_wrap": True, "valign": "top"})
+
+    for col, titulo in enumerate(["Concepto (EN)", "Traduccion", "Que mide"]):
+        hoja.write(0, col, titulo, f_encabezado)
+    for fila_idx, (en, es, que_mide) in enumerate(filas, start=1):
+        hoja.write(fila_idx, 0, en, f_concepto)
+        hoja.write(fila_idx, 1, es, f_concepto)
+        hoja.write(fila_idx, 2, que_mide, ajuste)
+
+    hoja.set_column(0, 0, 38)
+    hoja.set_column(1, 1, 38)
+    hoja.set_column(2, 2, 82)
+    hoja.freeze_panes(1, 0)

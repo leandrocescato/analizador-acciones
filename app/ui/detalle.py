@@ -13,10 +13,12 @@ mas rapida de comprar una value trap.
 
 from __future__ import annotations
 
+import html
+
 import pandas as pd
 import streamlit as st
 
-from .. import alertas, almacen, cache, estilo, perfiles
+from .. import alertas, almacen, cache, estilo, glosario, perfiles
 from ..conceptos import GRUPOS, POR_CLAVE
 from ..metricas import base
 from ..proveedores import edgar, mercado
@@ -57,6 +59,16 @@ NOMBRES_DERIVADOS = {
 
 
 def _nombre(clave: str) -> str:
+    """Rotulo de la fila. En los estados va en ingles, como en la presentacion.
+
+    Lo que la SEC publica esta en ingles. Mostrar los estados traducidos obliga
+    a hacer la traduccion inversa cada vez que se abre el 10-K original, y ahi
+    es donde se cuela el error. La traduccion y el significado viajan en el
+    tooltip de cada fila (`glosario.py`).
+    """
+    en_ingles = glosario.ingles(clave)
+    if en_ingles:
+        return en_ingles
     if clave in NOMBRES_DERIVADOS:
         return NOMBRES_DERIVADOS[clave]
     c = POR_CLAVE.get(clave)
@@ -68,6 +80,7 @@ def _tabla_estado(emp, claves: list[str]) -> pd.DataFrame | None:
     filas, indice = [], []
     anios = emp.anios[-12:]
 
+    usados = []
     for clave in claves:
         serie = emp.serie(clave)
         if not serie:
@@ -79,10 +92,15 @@ def _tabla_estado(emp, claves: list[str]) -> pd.DataFrame | None:
             for a in anios
         ])
         indice.append(_nombre(clave))
+        usados.append(clave)
 
     if not filas:
         return None
-    return pd.DataFrame(filas, index=indice, columns=[str(a) for a in anios])
+    df = pd.DataFrame(filas, index=indice, columns=[str(a) for a in anios])
+    # La clave de cada fila viaja con la tabla: es lo que despues permite
+    # colgarle el tooltip del glosario al rotulo, que ya esta en ingles.
+    df.attrs["claves"] = usados
+    return df
 
 
 def _formato_celda(valor):
@@ -90,6 +108,72 @@ def _formato_celda(valor):
     if valor is None or valor != valor:
         return "—"
     return f"{valor:,.2f}" if abs(valor) < 100 else f"{valor:,.0f}"
+
+
+# Los estados se dibujan a mano y no con `st.dataframe` por una sola razon:
+# hace falta un tooltip POR FILA, y `column_config` solo admite ayuda por
+# columna. Transponer la tabla para ganar los tooltips daria vuelta un estado
+# contable, que se lee con los conceptos en las filas y los ejercicios en las
+# columnas. Asi que el rotulo lleva un `title` nativo y listo.
+#
+# Los colores salen de `currentColor` y de grises translucidos: la hoja se ve
+# igual de bien en tema claro que en oscuro sin preguntar cual esta activo.
+_CSS_ESTADOS = """
+<style>
+.estado-scroll { overflow-x: auto; margin-bottom: .5rem; }
+table.estado {
+  border-collapse: collapse; width: 100%;
+  font-size: .86rem; font-variant-numeric: tabular-nums;
+}
+table.estado th, table.estado td {
+  padding: .34rem .65rem; white-space: nowrap;
+  border-bottom: 1px solid rgba(128,128,128,.22);
+}
+table.estado thead th {
+  text-align: right; font-weight: 600;
+  border-bottom: 2px solid rgba(128,128,128,.45);
+}
+table.estado thead th:first-child { text-align: left; }
+table.estado td { text-align: right; }
+table.estado th.concepto { text-align: left; font-weight: 400; }
+table.estado th.concepto span {
+  border-bottom: 1px dotted rgba(128,128,128,.7); cursor: help;
+}
+table.estado td.neg { color: #d64545; font-weight: 600; }
+table.estado tbody tr:hover { background: rgba(128,128,128,.09); }
+</style>
+"""
+
+
+def _html_estado(df: pd.DataFrame) -> str:
+    """El estado como tabla HTML, con la traduccion colgada de cada rotulo."""
+    claves = df.attrs.get("claves", [])
+
+    cabecera = "".join(f"<th>{html.escape(str(c))}</th>" for c in df.columns)
+    filas = []
+    for posicion, (rotulo, valores) in enumerate(zip(df.index, df.values)):
+        clave = claves[posicion] if posicion < len(claves) else ""
+        ayuda = glosario.tooltip(clave)
+        etiqueta = html.escape(str(rotulo))
+        concepto = (
+            f'<span title="{html.escape(ayuda, quote=True)}">{etiqueta}</span>'
+            if ayuda else etiqueta
+        )
+
+        celdas = []
+        for valor in valores:
+            negativo = valor is not None and valor == valor and valor < 0
+            celdas.append(
+                f'<td class="neg">{_formato_celda(valor)}</td>' if negativo
+                else f"<td>{_formato_celda(valor)}</td>")
+        filas.append(
+            f'<tr><th class="concepto">{concepto}</th>{"".join(celdas)}</tr>')
+
+    return (
+        '<div class="estado-scroll"><table class="estado">'
+        f"<thead><tr><th></th>{cabecera}</tr></thead>"
+        f'<tbody>{"".join(filas)}</tbody></table></div>'
+    )
 
 
 # Los seis numeros del encabezado y los seis controles de la lectura rapida
@@ -346,7 +430,7 @@ def _tabla_trimestral(datos: dict, claves: list[str], cuantos: int = 12):
     if not periodos:
         return None
 
-    filas, indice = [], []
+    filas, indice, usados = [], [], []
     for clave in claves:
         serie = datos["series"].get(clave)
         if not serie:
@@ -355,11 +439,14 @@ def _tabla_trimestral(datos: dict, claves: list[str], cuantos: int = 12):
         escala = 1.0 if es_unitario else 1e6
         filas.append([(serie[p] / escala) if p in serie else None for p in periodos])
         indice.append(_nombre(clave))
+        usados.append(clave)
 
     if not filas:
         return None
     columnas = ["%dT%02d" % (t, a % 100) for a, t in periodos]
-    return pd.DataFrame(filas, index=indice, columns=columnas)
+    df = pd.DataFrame(filas, index=indice, columns=columnas)
+    df.attrs["claves"] = usados
+    return df
 
 
 def _bloque_estados(emp):
@@ -373,7 +460,12 @@ def _bloque_estados(emp):
         st.caption("En millones de USD, salvo la ganancia por accion. "
                    "Fuente: SEC EDGAR.")
 
-    nombres = ["Estado de resultados", "Balance", "Flujo de caja"]
+    st.caption("Los conceptos van en ingles, igual que en la presentacion "
+               "original. Pasa el mouse por encima de cualquiera para ver la "
+               "traduccion y que mide.")
+    st.markdown(_CSS_ESTADOS, unsafe_allow_html=True)
+
+    nombres = ["Income Statement", "Balance Sheet", "Cash Flow"]
     grupos = [ESTADO_RESULTADOS, ESTADO_BALANCE, ESTADO_FLUJO]
 
     if periodicidad == "Trimestral":
@@ -388,11 +480,7 @@ def _bloque_estados(emp):
             if df is None:
                 st.info("Sin datos suficientes para este estado.")
                 continue
-            st.dataframe(
-                df.style.format(_formato_celda, na_rep="—")
-                        .map(comun.pintar_negativos),
-                width="stretch",
-            )
+            st.markdown(_html_estado(df), unsafe_allow_html=True)
 
     _descarga_estados(emp, tablas)
 
@@ -440,11 +528,7 @@ def _estados_trimestrales(emp, nombres, grupos):
             if df is None:
                 st.info("Sin datos suficientes para este estado.")
                 continue
-            st.dataframe(
-                df.style.format(_formato_celda, na_rep="—")
-                        .map(comun.pintar_negativos),
-                width="stretch",
-            )
+            st.markdown(_html_estado(df), unsafe_allow_html=True)
 
     cuartos = sorted({p for _, p in datos["derivados"] if p[1] == 4})
     if cuartos:
