@@ -100,6 +100,11 @@ def _tabla_estado(emp, claves: list[str]) -> pd.DataFrame | None:
     # La clave de cada fila viaja con la tabla: es lo que despues permite
     # colgarle el tooltip del glosario al rotulo, que ya esta en ingles.
     df.attrs["claves"] = usados
+    # Y el periodo de cada columna, para saber contra cual comparar. No sirve
+    # "la columna de al lado": si a la empresa le falta un ejercicio, la de al
+    # lado es de dos años antes y la variacion seria de dos años presentada
+    # como anual.
+    df.attrs["periodos"] = [(a, None) for a in anios]
     return df
 
 
@@ -139,15 +144,82 @@ table.estado th.concepto { text-align: left; font-weight: 400; }
 table.estado th.concepto span {
   border-bottom: 1px dotted rgba(128,128,128,.7); cursor: help;
 }
-table.estado td.neg { color: #d64545; font-weight: 600; }
+table.estado td.neg > span:first-child { color: #d64545; font-weight: 600; }
 table.estado tbody tr:hover { background: rgba(128,128,128,.09); }
+
+/* La variacion va en tono apagado y SIN verde ni rojo. Que un numero suba no
+   es bueno ni malo por si mismo: en Total Revenue subir es una cosa y en
+   Interest Expense o Cost of Revenue es la contraria. Pintar todas las subas
+   de verde seria una opinion, y una equivocada en la mitad de las filas. El
+   signo alcanza para leer la direccion. */
+table.estado td .delta {
+  display: block; font-size: .78em; opacity: .6; margin-top: .05rem;
+}
+table.estado td .solo-delta { opacity: .85; }
 </style>
 """
 
 
-def _html_estado(df: pd.DataFrame) -> str:
+VISTAS_ESTADO = ["Valores", "Var %", "Ambos"]
+
+
+def _columna_anterior(periodos: list, i: int) -> int | None:
+    """Indice de la columna contra la que se compara la columna `i`.
+
+    Anual: el ejercicio inmediatamente anterior. Trimestral: EL MISMO TRIMESTRE
+    del año anterior, no el trimestre de al lado. Comparar 1T contra 4T mide
+    estacionalidad, no negocio: cualquier minorista muestra un derrumbe del
+    30% cada primer trimestre y una explosion cada cuarto. Es un numero real
+    que responde otra pregunta.
+
+    En los dos casos se exige que el periodo buscado EXISTA con la distancia
+    exacta. Si a la empresa le falta un ejercicio, la columna de al lado es de
+    dos años antes, y esa variacion presentada como anual es falsa.
+    """
+    if i <= 0 or i >= len(periodos):
+        return None
+    anio, trimestre = periodos[i]
+    buscado = (anio - 1, trimestre)
+    for j in range(i - 1, -1, -1):
+        if periodos[j] == buscado:
+            return j
+    return None
+
+
+def _variacion(actual, previo) -> float | None:
+    """Variacion porcentual, o None cuando el porcentaje no significaria nada.
+
+    La base tiene que ser POSITIVA. Una empresa que pasa de perder 100 a perder
+    50 no mejoro "un 50%": el signo del denominador da vuelta la lectura, y
+    desde una base negativa una mejora sale con signo de empeoramiento. Lo
+    mismo con base cero, que ademas divide por cero. En esos casos no hay
+    variacion porcentual que publicar, y se muestra un guion.
+    """
+    if actual is None or previo is None:
+        return None
+    if actual != actual or previo != previo:   # NaN
+        return None
+    if previo <= 0:
+        return None
+    return (actual / previo - 1) * 100
+
+
+def _formato_variacion(valor) -> str:
+    if valor is None:
+        return "—"
+    return f"{valor:+,.1f}%"
+
+
+def _html_estado(df: pd.DataFrame, vista: str = "Valores") -> str:
     """El estado como tabla HTML, con la traduccion colgada de cada rotulo."""
     claves = df.attrs.get("claves", [])
+    periodos = df.attrs.get("periodos", [])
+    con_valor = vista in ("Valores", "Ambos")
+    con_var = vista in ("Var %", "Ambos")
+
+    # De que columna sale la comparacion de cada columna. Se resuelve una sola
+    # vez: es igual para todas las filas.
+    anteriores = [_columna_anterior(periodos, i) for i in range(len(df.columns))]
 
     cabecera = "".join(f"<th>{html.escape(str(c))}</th>" for c in df.columns)
     filas = []
@@ -161,11 +233,21 @@ def _html_estado(df: pd.DataFrame) -> str:
         )
 
         celdas = []
-        for valor in valores:
-            negativo = valor is not None and valor == valor and valor < 0
-            celdas.append(
-                f'<td class="neg">{_formato_celda(valor)}</td>' if negativo
-                else f"<td>{_formato_celda(valor)}</td>")
+        for i, valor in enumerate(valores):
+            partes, clases = [], []
+            if con_valor:
+                if valor is not None and valor == valor and valor < 0:
+                    clases.append("neg")
+                partes.append(f"<span>{_formato_celda(valor)}</span>")
+            if con_var:
+                j = anteriores[i]
+                var = _variacion(valor, valores[j]) if j is not None else None
+                estilo_var = "delta" if con_valor else "solo-delta"
+                partes.append(
+                    f'<span class="{estilo_var}">{_formato_variacion(var)}</span>')
+            atributo = f' class="{" ".join(clases)}"' if clases else ""
+            celdas.append(f"<td{atributo}>{''.join(partes)}</td>")
+
         filas.append(
             f'<tr><th class="concepto">{concepto}</th>{"".join(celdas)}</tr>')
 
@@ -446,6 +528,7 @@ def _tabla_trimestral(datos: dict, claves: list[str], cuantos: int = 12):
     columnas = ["%dT%02d" % (t, a % 100) for a, t in periodos]
     df = pd.DataFrame(filas, index=indice, columns=columnas)
     df.attrs["claves"] = usados
+    df.attrs["periodos"] = list(periodos)
     return df
 
 
@@ -457,19 +540,23 @@ def _bloque_estados(emp):
         periodicidad = st.segmented_control(
             "Periodicidad", ["Anual", "Trimestral"], default="Anual",
             label_visibility="collapsed", key="periodicidad_estados")
+        vista = st.segmented_control(
+            "Vista", VISTAS_ESTADO, default="Valores",
+            label_visibility="collapsed", key="vista_estados",
+            help="Importes, variacion contra el periodo equivalente del año "
+                 "anterior, o las dos cosas en la misma celda.")
         st.caption("En millones de USD, salvo la ganancia por accion. "
                    "Fuente: SEC EDGAR.")
 
-    st.caption("Los conceptos van en ingles, igual que en la presentacion "
-               "original. Pasa el mouse por encima de cualquiera para ver la "
-               "traduccion y que mide.")
+    vista = vista or "Valores"   # el segmented_control admite quedar en nada
+    _pie_estados(vista, periodicidad)
     st.markdown(_CSS_ESTADOS, unsafe_allow_html=True)
 
     nombres = ["Income Statement", "Balance Sheet", "Cash Flow"]
     grupos = [ESTADO_RESULTADOS, ESTADO_BALANCE, ESTADO_FLUJO]
 
     if periodicidad == "Trimestral":
-        _estados_trimestrales(emp, nombres, grupos)
+        _estados_trimestrales(emp, nombres, grupos, vista)
         return
 
     tablas = {n: _tabla_estado(emp, claves) for n, claves in zip(nombres, grupos)}
@@ -480,12 +567,30 @@ def _bloque_estados(emp):
             if df is None:
                 st.info("Sin datos suficientes para este estado.")
                 continue
-            st.markdown(_html_estado(df), unsafe_allow_html=True)
+            st.markdown(_html_estado(df, vista), unsafe_allow_html=True)
 
     _descarga_estados(emp, tablas)
 
 
-def _estados_trimestrales(emp, nombres, grupos):
+def _pie_estados(vista: str, periodicidad: str):
+    """Que se esta mirando y contra que se compara. Sin esto, un porcentaje
+    trimestral se lee como si fuera contra el trimestre de al lado."""
+    partes = ["Los conceptos van en ingles, igual que en la presentacion "
+              "original. Pasa el mouse por encima de cualquiera para ver la "
+              "traduccion y que mide."]
+    if vista != "Valores":
+        contra = ("el mismo trimestre del año anterior"
+                  if periodicidad == "Trimestral" else "el ejercicio anterior")
+        partes.append(
+            f"**Var %** compara contra **{contra}**. El signo indica direccion, "
+            "no si la noticia es buena: en *Total Revenue* subir es una cosa y "
+            "en *Interest Expense* la contraria. Un guion quiere decir que no "
+            "hay periodo con que comparar o que la base era negativa o cero, "
+            "donde el porcentaje da vuelta la lectura en vez de resumirla.")
+    st.caption("  \n".join(partes))
+
+
+def _estados_trimestrales(emp, nombres, grupos, vista: str = "Valores"):
     """Los mismos estados por trimestre, con lo que EDGAR realmente permite.
 
     El flujo de caja queda afuera a proposito: en los 10-Q se presenta
@@ -528,7 +633,7 @@ def _estados_trimestrales(emp, nombres, grupos):
             if df is None:
                 st.info("Sin datos suficientes para este estado.")
                 continue
-            st.markdown(_html_estado(df), unsafe_allow_html=True)
+            st.markdown(_html_estado(df, vista), unsafe_allow_html=True)
 
     cuartos = sorted({p for _, p in datos["derivados"] if p[1] == 4})
     if cuartos:
