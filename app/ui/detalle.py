@@ -725,6 +725,12 @@ def _descarga_estados(emp, tablas, sufijo: str = "anual"):
 
 def _bloque_graficos(emp):
     st.subheader("Evolucion historica")
+    st.caption(
+        "Los rotulos van en ingles, igual que en los estados contables: un "
+        "grafico que dice *Margen bruto* al lado de una tabla que dice *Gross "
+        "Profit* obliga a traducir de ida y de vuelta cada vez que abris el "
+        "10-K. Los nombres salen del mismo glosario que la tabla."
+    )
 
     serie_precios = mercado.precios(emp.ticker)
     precios_anuales = mercado.serie_anual_precios(emp.ticker)

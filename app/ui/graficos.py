@@ -2,11 +2,24 @@
 
 Cada funcion recibe una Empresa y devuelve una figura, o None si no hay datos
 suficientes. La pagina de Detalle decide cuales dibujar.
+
+LOS ROTULOS VAN EN INGLES
+-------------------------
+Por lo mismo que los estados contables (ver `ui/detalle.py::_nombre`): lo que
+publica la SEC esta en ingles, y un grafico que dice "Margen bruto" al lado de
+una tabla que dice "Gross Profit" obliga a traducir de ida y de vuelta cada vez.
+
+Y no se escriben a mano aca. Salen de `glosario.py`, que es de donde salen los
+de la tabla: un rotulo duplicado es un rotulo que un dia va a decir otra cosa.
+`_en()` busca primero entre los conceptos contables y despues entre los
+indicadores calculados, que son dos diccionarios distintos.
 """
 
 from __future__ import annotations
 
 import plotly.graph_objects as go
+
+from .. import glosario
 
 VERDE = "#2f9e6b"
 ROJO = "#cf4b4b"
@@ -48,6 +61,11 @@ def _eje_secundario(titulo: str) -> dict:
                 showgrid=False, automargin=True)
 
 
+def _en(clave: str, respaldo: str = "") -> str:
+    """Rotulo en ingles de un concepto contable o de un indicador calculado."""
+    return glosario.ingles(clave) or glosario.metrica_en(clave) or respaldo or clave
+
+
 def _xy(serie: dict[int, float], escala: float = 1.0):
     anios = sorted(serie)
     return anios, [serie[a] / escala for a in anios]
@@ -64,14 +82,14 @@ def ingresos_y_margenes(e):
     if len(ing) < 3:
         return None
 
-    fig = _base("Ingresos y margenes", "Ingresos (M USD)")
+    fig = _base(f'{_en("ingresos")} & Margins', f'{_en("ingresos")} ($M)')
     anios, valores = _xy(ing, 1e6)
-    fig.add_bar(x=anios, y=valores, name="Ingresos", marker_color=AZUL, opacity=0.55)
+    fig.add_bar(x=anios, y=valores, name=_en("ingresos"), marker_color=AZUL, opacity=0.55)
 
     for clave, nombre, color in [
-        ("ganancia_bruta", "Margen bruto", VERDE),
-        ("ebit", "Margen operativo", NARANJA),
-        ("ganancia_neta", "Margen neto", VIOLETA),
+        ("ganancia_bruta", _en("margen_bruto"), VERDE),
+        ("ebit", _en("margen_operativo"), NARANJA),
+        ("ganancia_neta", _en("margen_neto"), VIOLETA),
     ]:
         serie = e.serie(clave)
         comunes = sorted(set(serie) & set(ing))
@@ -82,7 +100,7 @@ def ingresos_y_margenes(e):
             name=nombre, yaxis="y2", mode="lines+markers", line=dict(color=color, width=2),
         )
 
-    fig.update_layout(yaxis2=_eje_secundario("Margen (%)"))
+    fig.update_layout(yaxis2=_eje_secundario("Margin (%)"))
     return fig
 
 
@@ -95,16 +113,16 @@ def roic_vs_wacc(e):
     if len(anios) < 3:
         return None
 
-    fig = _base("ROIC contra costo de capital", "%")
+    fig = _base(f'{_en("roic")} vs. Cost of Capital', "%")
     fig.add_scatter(
         x=anios, y=[nopat[a] / capital[a] * 100 for a in anios],
-        name="ROIC", mode="lines+markers", line=dict(color=VERDE, width=3),
+        name=_en("roic"), mode="lines+markers", line=dict(color=VERDE, width=3),
     )
 
     w = _wacc(e)
     if w:
         fig.add_scatter(
-            x=anios, y=[w * 100] * len(anios), name="WACC estimado",
+            x=anios, y=[w * 100] * len(anios), name=_en("wacc"),
             mode="lines", line=dict(color=ROJO, width=2, dash="dash"),
         )
     return fig
@@ -117,17 +135,17 @@ def ganancia_vs_caja(e):
     if len(anios) < 3:
         return None
 
-    fig = _base("Ganancia neta contra caja libre", "M USD")
+    fig = _base(f'{_en("ganancia_neta")} vs. {_en("fcf")}', "$M")
     fig.add_bar(x=anios, y=[gn.get(a, 0) / 1e6 for a in anios],
-                name="Ganancia neta", marker_color=GRIS)
+                name=_en("ganancia_neta"), marker_color=GRIS)
     fig.add_bar(x=anios, y=[fcf.get(a, 0) / 1e6 for a in anios],
-                name="Caja libre (FCF)", marker_color=VERDE)
+                name=_en("fcf"), marker_color=VERDE)
 
     sbc = e.serie("sbc")
     if sbc:
         fig.add_scatter(
             x=anios, y=[(fcf.get(a, 0) - sbc.get(a, 0)) / 1e6 for a in anios],
-            name="FCF neto de SBC", mode="lines+markers",
+            name="FCF net of SBC", mode="lines+markers",
             line=dict(color=NARANJA, width=2, dash="dot"),
         )
     fig.update_layout(barmode="group")
@@ -140,9 +158,9 @@ def deuda(e):
     if len(dn) < 3:
         return None
 
-    fig = _base("Deuda neta y apalancamiento", "M USD")
+    fig = _base(f'{_en("deuda_neta")} & Leverage', "$M")
     anios, valores = _xy(dn, 1e6)
-    fig.add_bar(x=anios, y=valores, name="Deuda neta",
+    fig.add_bar(x=anios, y=valores, name=_en("deuda_neta"),
                 marker_color=[ROJO if v > 0 else VERDE for v in valores])
 
     ebitda = e.serie("ebitda")
@@ -150,10 +168,10 @@ def deuda(e):
     if len(comunes) >= 3:
         fig.add_scatter(
             x=comunes, y=[dn[a] / ebitda[a] for a in comunes],
-            name="Deuda neta / EBITDA", yaxis="y2", mode="lines+markers",
+            name=_en("deuda_neta_ebitda"), yaxis="y2", mode="lines+markers",
             line=dict(color=NARANJA, width=2),
         )
-        fig.update_layout(yaxis2=_eje_secundario("veces EBITDA"))
+        fig.update_layout(yaxis2=_eje_secundario("x EBITDA"))
     return fig
 
 
@@ -165,8 +183,8 @@ def acciones(e):
 
     anios, valores = _xy(serie, 1e6)
     color = VERDE if valores[-1] <= valores[0] else ROJO
-    fig = _base("Acciones en circulacion (diluidas)", "Millones de acciones")
-    fig.add_scatter(x=anios, y=valores, mode="lines+markers", name="Acciones",
+    fig = _base(_en("acciones_dil"), "Millions of shares")
+    fig.add_scatter(x=anios, y=valores, mode="lines+markers", name=_en("acciones_dil"),
                     line=dict(color=color, width=3), fill="tozeroy",
                     fillcolor="rgba(120,120,120,0.10)")
     return fig
@@ -175,10 +193,10 @@ def acciones(e):
 def asignacion_capital(e):
     """A donde va la caja que genera el negocio, año por año."""
     componentes = [
-        ("capex", "Capex", AZUL),
-        ("adquisiciones", "Adquisiciones", VIOLETA),
-        ("dividendos", "Dividendos", VERDE),
-        ("recompras", "Recompras", NARANJA),
+        ("capex", "CapEx", AZUL),
+        ("adquisiciones", "Acquisitions", VIOLETA),
+        ("dividendos", _en("dividendos"), VERDE),
+        ("recompras", _en("recompras"), NARANJA),
     ]
     presentes = [(k, n, c) for k, n, c in componentes if e.serie(k)]
     if not presentes:
@@ -188,7 +206,7 @@ def asignacion_capital(e):
     if len(anios) < 3:
         return None
 
-    fig = _base("Asignacion del capital", "M USD")
+    fig = _base(glosario.grupo_en("Capital"), "$M")
     for clave, nombre, color in presentes:
         serie = e.serie(clave)
         fig.add_bar(x=anios, y=[serie.get(a, 0) / 1e6 for a in anios],
@@ -198,7 +216,7 @@ def asignacion_capital(e):
     if flujo:
         fig.add_scatter(
             x=anios, y=[flujo.get(a, 0) / 1e6 for a in anios],
-            name="Flujo operativo", mode="lines+markers",
+            name="Cash Flow from Operations", mode="lines+markers",
             line=dict(color=GRIS, width=2, dash="dash"),
         )
     fig.update_layout(barmode="stack")
@@ -220,13 +238,13 @@ def recompras_contra_precio(e, precios_anuales: dict[int, float]):
     if len(anios) < 3:
         return None
 
-    fig = _base("Recompras contra cotizacion", "Recompras (M USD)")
+    fig = _base(f'{_en("recompras")} vs. Share Price', f'{_en("recompras")} ($M)')
     fig.add_bar(x=anios, y=[recompras[a] / 1e6 for a in anios],
-                name="Recompras", marker_color=NARANJA, opacity=0.65)
+                name=_en("recompras"), marker_color=NARANJA, opacity=0.65)
     fig.add_scatter(x=anios, y=[precios_anuales[a] for a in anios],
-                    name="Precio de cierre", yaxis="y2", mode="lines+markers",
+                    name="Closing Price", yaxis="y2", mode="lines+markers",
                     line=dict(color=AZUL, width=3))
-    fig.update_layout(yaxis2=_eje_secundario("USD por accion"))
+    fig.update_layout(yaxis2=_eje_secundario("$ per share"))
     return fig
 
 
@@ -239,13 +257,13 @@ def multiplo_historico(e, precios_anuales: dict[int, float]):
     if len(anios) < 4:
         return None
 
-    fig = _base("PER historico (a cierre de cada año)", "veces")
+    fig = _base(f'Historical {_en("per")} (at each year-end)', "x")
     valores = [precios_anuales[a] / (ganancia[a] / acciones_serie[a]) for a in anios]
-    fig.add_scatter(x=anios, y=valores, name="PER", mode="lines+markers",
+    fig.add_scatter(x=anios, y=valores, name=_en("per"), mode="lines+markers",
                     line=dict(color=AZUL, width=3))
 
     promedio = sum(valores) / len(valores)
-    fig.add_scatter(x=anios, y=[promedio] * len(anios), name=f"Promedio {promedio:.1f}x",
+    fig.add_scatter(x=anios, y=[promedio] * len(anios), name=f"Average {promedio:.1f}x",
                     mode="lines", line=dict(color=GRIS, width=2, dash="dash"))
     return fig
 
@@ -254,10 +272,10 @@ def precio_historico(e, serie_precios: list[dict]):
     """Cotizacion de largo plazo, para ubicar el punto de entrada."""
     if not serie_precios:
         return None
-    fig = _base("Cotizacion (15 años)", "USD")
+    fig = _base("Share Price (15 years)", "USD")
     fig.add_scatter(
         x=[p["fecha"] for p in serie_precios], y=[p["cierre"] for p in serie_precios],
-        name="Cierre", mode="lines", line=dict(color=AZUL, width=1.6),
+        name="Close", mode="lines", line=dict(color=AZUL, width=1.6),
     )
     fig.update_layout(hovermode="x")
     return fig
