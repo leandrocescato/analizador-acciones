@@ -26,9 +26,12 @@ La linea es esa: Yahoo elige a quien mirar, EDGAR dice cuanto vale.
 from __future__ import annotations
 
 import datetime as dt
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 
 import yfinance as yf
+
+from .proveedores import mercado
 
 # ------------------------------------------------------------------ universo del barrido
 #
@@ -45,6 +48,10 @@ _MERCADOS = ["NMS", "NYQ"]
 # la hayas resuelto. Si el precio se recupero y ya no esta barata, en algun
 # momento tiene que dejar de ocupar lugar en la pantalla.
 DIAS_RETENCION = 30
+
+# Cuantas fichas seguidas pueden fallar antes de dar por perdido el intento de
+# completar sectores. Ver `completar_perfil`.
+FALLOS_PARA_CORTAR = 5
 
 # Tope de candidatas por corrida. No es un filtro de Yahoo: es cuantas se traen
 # de las que pasaron, empezando por las mas baratas por PER.
@@ -202,6 +209,9 @@ def _fila(q: dict) -> dict:
         "dist_max52": _dist_max52(precio, q.get("fiftyTwoWeekHigh")),
         "volumen": q.get("averageDailyVolume3Month"),
         "mercado": q.get("fullExchangeName"),
+        # El screener no los devuelve; los completa `completar_perfil`.
+        "sector": None,
+        "industria": None,
     }
 
 
@@ -239,6 +249,64 @@ def barrer(filtros: dict | None = None) -> tuple[list[dict], int]:
     return limpias[:tope], total
 
 
+# ------------------------------------------------------------------ sector e industria
+
+
+def completar_perfil(candidatas: list[dict], barra=None) -> int:
+    """Rellena sector e industria de las que no los tengan. Devuelve cuantas.
+
+    El screener de Yahoo NO los devuelve: filtra por sector pero no lo publica
+    en la respuesta. Hay que pedir la ficha de cada empresa aparte, que es un
+    pedido por ticker y tarda casi dos segundos.
+
+    Por eso se hace una sola vez por candidata y queda guardado con ella. En la
+    primera corrida son cuarenta pedidos; despues, los dos o tres que entraron
+    ese dia.
+
+    Que una ficha falle no es motivo para nada: la candidata se queda sin
+    sector y el resto de sus numeros —que son los que la trajeron al radar—
+    siguen estando.
+    """
+    faltan = [c for c in candidatas if not c.get("sector")]
+    if not faltan:
+        return 0
+
+    def _perfil(candidata):
+        try:
+            foto = mercado.instantanea(candidata["ticker"])
+            return foto.get("sector"), foto.get("industria")
+        except Exception:
+            return None, None
+
+    completadas, fallos = 0, 0
+    # Tres hilos: suficiente para que no tarde una eternidad, poco para que
+    # Yahoo no lo tome por una rafaga y empiece a rechazar.
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        futuros = {pool.submit(_perfil, c): c for c in faltan}
+        for i, fut in enumerate(as_completed(futuros), 1):
+            candidata = futuros[fut]
+            sector, industria = fut.result()
+            if sector:
+                candidata["sector"] = sector
+                candidata["industria"] = industria
+                completadas += 1
+            else:
+                fallos += 1
+            if barra is not None:
+                barra.progress(i / len(faltan),
+                               text=f"Sector de {candidata['ticker']} ({i}/{len(faltan)})")
+            # CORTE: si nada entra al principio, Yahoo esta rechazando esta IP
+            # —lo normal cuando la app corre en la nube— y seguir es esperar
+            # ochenta veces por la misma negativa. Las candidatas quedan sin
+            # sector, que se muestra como un guion, y la corrida diaria (que
+            # sale de otra IP) los completa.
+            if fallos >= FALLOS_PARA_CORTAR and completadas == 0:
+                for pendiente in futuros:
+                    pendiente.cancel()
+                break
+    return completadas
+
+
 # ------------------------------------------------------------------ estado guardado
 
 
@@ -270,6 +338,10 @@ def fusionar(previo: dict, encontradas: list[dict], universo: list[str],
         anterior = previas.get(t) or {}
         salida.append({
             **enc,
+            # El sector se averigua una vez y se hereda: volver a pedirlo cada
+            # dia serian cuarenta pedidos a Yahoo para un dato que no cambia.
+            "sector": anterior.get("sector") or enc.get("sector"),
+            "industria": anterior.get("industria") or enc.get("industria"),
             "fecha_alta": anterior.get("fecha_alta", hoy),
             "diagnostico": anterior.get("diagnostico"),
             "vigente": True,

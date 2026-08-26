@@ -27,10 +27,13 @@ from . import comun
 COLUMNAS = {
     "Ticker": st.column_config.TextColumn("Ticker", pinned=True, width="small"),
     "Empresa": st.column_config.TextColumn("Empresa", width="medium"),
+    "Sector": st.column_config.TextColumn("Sector", width="small"),
+    "Industria": st.column_config.TextColumn("Industria", width="medium"),
     "Causa": st.column_config.TextColumn(
         "Causa", width="medium",
-        help="Como clasifico Claude el motivo de la caida. Vacio = todavia sin "
-             "diagnosticar."),
+        help="Como clasifico Claude el motivo de la caida. Un guion es que "
+             "todavia nadie la diagnostico: lo hace el barrido de la noche, o "
+             "vos con el boton de la ficha."),
     "PER": st.column_config.NumberColumn("PER", format="%.1fx"),
     "EPS": st.column_config.NumberColumn("EPS", format="$%.2f"),
     "P/VL": st.column_config.NumberColumn("P/VL", format="%.2fx"),
@@ -70,6 +73,13 @@ def _barrer_ahora(estado: dict) -> None:
             st.error(f"El screener de Yahoo no contesto: {exc}")
             return
     nuevo = radar.fusionar(estado, encontradas, comun.leer_universo(), filtros, total)
+
+    # El sector no viene en el screener y hay que pedirlo empresa por empresa.
+    # Con barra, porque en la primera corrida son cuarenta pedidos.
+    barra = st.progress(0.0, text="Buscando el sector de cada una...")
+    radar.completar_perfil(nuevo["candidatas"], barra)
+    barra.empty()
+
     _guardar(nuevo)
     st.toast(f"{len(nuevo['candidatas'])} candidatas ({total} pasaron el filtro).")
 
@@ -216,7 +226,11 @@ def _tabla(candidatas: list[dict]) -> pd.DataFrame:
         filas.append({
             "Ticker": c.get("ticker"),
             "Empresa": (c.get("nombre") or "")[:38],
-            "Causa": diag.get("causa") or ("? " if diag.get("error") else ""),
+            "Sector": c.get("sector") or "—",
+            "Industria": c.get("industria") or "—",
+            # El guion es informacion: dice "nadie la miro todavia". Una celda
+            # vacia se lee como un error de la app.
+            "Causa": diag.get("causa") or ("fallo" if diag.get("error") else "—"),
             "PER": c.get("per"),
             "EPS": c.get("eps"),
             "P/VL": c.get("pvl"),

@@ -403,6 +403,34 @@ def render():
             icon=":material/arrow_forward:",
         )
 
+    # UNA CELDA VACIA TIENE QUE DECIR POR QUE LO ESTA
+    # -----------------------------------------------
+    # Yahoo rechaza pedidos cuando le entran varios juntos, y mucho mas desde
+    # un servidor, donde la IP es compartida: en la nube es normal que tres o
+    # cuatro tickers vuelvan sin PER forward ni estimaciones. La foto queda
+    # marcada `parcial` y vence a los 15 minutos, asi que se cura sola.
+    #
+    # Lo que no se curaba solo era la lectura: en la tabla se ve igual que un
+    # dato que la empresa no publica, y ahi uno empieza a desconfiar del
+    # indicador en vez de del momento en que se pidio.
+    parciales = [(e.ticker, e.mercado.get("error_estimaciones")
+                  or e.mercado.get("error_info") or "sin detalle")
+                 for e, _ in validas if e.mercado.get("parcial")]
+    if parciales:
+        nombres = ", ".join(t for t, _ in parciales[:8])
+        st.warning(
+            f"Yahoo no contesto completo para {len(parciales)} ticker(s): "
+            f"{nombres}{' y otros' if len(parciales) > 8 else ''}. Las columnas "
+            "de consenso —PER forward, crecimiento NTM— les quedan vacias. "
+            "**No es que la empresa no publique el dato: es un rechazo "
+            "pasajero**, tipico cuando la app corre en la nube. Esa foto vence "
+            "a los 15 minutos: tocá **Actualizar** en la barra lateral en un "
+            "rato y vuelven.",
+            icon=":material/cloud_off:")
+        with st.expander("Que dijo Yahoo, ticker por ticker"):
+            for ticker, motivo in parciales:
+                st.write(f"- **{ticker}**: {motivo}")
+
     nota_perfiles = ""
     if hay_financieras:
         nota_perfiles = (

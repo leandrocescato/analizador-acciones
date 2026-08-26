@@ -76,6 +76,10 @@ def main() -> int:
     print(f"Nuevas hoy: {len(nuevas)}"
           + (f" -> {', '.join(c['ticker'] for c in nuevas)}" if nuevas else ""))
 
+    completadas = radar.completar_perfil(nuevo["candidatas"])
+    if completadas:
+        print(f"Sector e industria: completados en {completadas}.")
+
     # El radar se guarda ANTES de diagnosticar. Si el paso del por que falla o
     # se queda sin cuota, las candidatas del dia ya estan a salvo.
     almacen.guardar_radar(nuevo)
