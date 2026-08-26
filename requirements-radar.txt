@@ -1,0 +1,7 @@
+# RESPALDO, no hace falta normalmente.
+#
+# El diagnostico corre con Claude Code —el comando `claude`, que usa tu
+# suscripcion— tanto en la app como en GitHub Actions. Este paquete es solo
+# para el camino alternativo por la API de Anthropic, que se factura aparte
+# y sirve en una maquina sin Claude Code instalado. Ver app/diagnostico.py.
+anthropic>=0.40

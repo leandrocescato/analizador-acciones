@@ -16,7 +16,14 @@ un archivo, se perderían. Por eso van a un Gist privado de GitHub.
 
 1. Andá a **https://gist.github.com**
 2. Nombre de archivo: `universo.json`
-3. Contenido: `[]`
+3. Contenido: **tu lista de tickers actual**, no un array vacío. Hoy es:
+
+   ```json
+   ["META", "NVDA", "TSLA", "AAPL", "GOOGL", "NU", "MELI", "KO"]
+   ```
+
+   > Con `[]` la app lo lee como "primera vez" y escribe su lista por defecto
+   > encima de la tuya. Sembrándolo con lo que ya tenés, no pasa.
 4. Botón **Create secret gist** — *secret*, no público
 5. De la URL que queda, copiá el último tramo. Ese es tu `gist_id`:
    `https://gist.github.com/leandro/`**`a1b2c3d4e5f6...`**

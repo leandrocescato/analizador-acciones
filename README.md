@@ -1,13 +1,14 @@
 # Analizador de Acciones
 
 Aplicación local para análisis fundamental de acciones de EE.UU. con enfoque
-*deep value*. Dos vistas: un **Panel** con una fila por acción para barrer el
-universo, y un **Detalle** con estados contables, evolución histórica y
-valuación para las que merecen una tarde entera.
+*deep value*. Tres vistas: un **Panel** con una fila por acción para barrer el
+universo, un **Detalle** con estados contables, evolución histórica y valuación
+para las que merecen una tarde entera, y un **Radar** que sale a buscar
+candidatas nuevas al mercado, solo, una vez por día.
 
 Los estados contables salen de **SEC EDGAR** (XBRL auditado, 15 años). Los datos
-de mercado, de **Yahoo Finance**, con Stooq como respaldo. Todo gratis y sin
-claves de API.
+de mercado, de **Yahoo Finance**, con Stooq como respaldo. Sin claves de API:
+el diagnóstico del Radar corre como Claude Code, con tu suscripción.
 
 ---
 
@@ -56,7 +57,7 @@ pip install -r requirements.txt
 
 ---
 
-## Las dos vistas
+## Las tres vistas
 
 ### Panel
 
@@ -174,6 +175,33 @@ comprar una *value trap*:
 6. **Auditoría XBRL** — de qué etiqueta salió cada número
 7. **Tu tesis** — nota por empresa, guardada en la base local
 
+### Radar
+
+La bandeja de entrada. Las otras dos vistas analizan empresas que elegiste vos;
+esta trae empresas que no elegiste.
+
+Una vez por día, en GitHub Actions, el barrido le pide al **screener de Yahoo**
+las empresas de NYSE y Nasdaq que pasan tus filtros —el preset de fábrica es
+deep value castigado: PER < 14, EPS > 0, ROE > 8%, deuda/EBITDA < 3,5x y abajo
+en el año—, descarta las que ya tenés y las que ya rechazaste, y a las nuevas
+les pide a **Claude, con buscador web**, un párrafo que conteste por qué están
+castigadas, clasificado en una de cinco causas. Corre como Claude Code con tu
+suscripción, no contra la API: no hay factura aparte, sale de tu cuota de uso.
+
+Eso último es el punto. El filtro contesta *cuáles están baratas*, que es la
+pregunta fácil; una caída del 40% con ROIC alto y balance limpio se ve idéntica
+sea una oportunidad o una trampa de valor, y la diferencia está en las noticias,
+no en el balance. El párrafo no recomienda ni valúa: dice qué pasó y qué hay
+que verificar en los estados contables para saber si se revierte.
+
+Cada candidata tiene tres salidas —**al universo**, **al Detalle** sin sumarla,
+o **descartada**— y lo descartado no vuelve a aparecer, que es lo que evita que
+el radar se convierta en la misma lista todos los días.
+
+Los filtros se editan desde la barra lateral y la corrida de esa noche usa lo
+que dejaste puesto. Puesta en marcha, costos y diagnóstico de fallas:
+**[RADAR.md](RADAR.md)**.
+
 ---
 
 ## El DCF inverso
@@ -211,6 +239,8 @@ app/
   perfiles.py          banco / seguros / REIT / general, y qué no aplica a cada uno
   estilo.py            value / growth / híbrida / turnaround, y su cuadro de ratios
   alertas.py           señales de alerta por gravedad, según el estilo
+  radar.py             el barrido: filtros del screener y memoria entre corridas
+  diagnostico.py       por qué cayó: Claude con buscador web, una vez por empresa
   proveedores/
     edgar.py           SEC EDGAR — la única fuente auditada
     instancia_xbrl.py  lector de XBRL crudo, para cuando la API se atrasa
@@ -227,7 +257,10 @@ app/
     senales.py         Piotroski F-Score, Beneish M-Score
     sectoriales.py     banca, seguros y REITs — solo en su perfil
   modelo.py            Empresa: une fundamentals + mercado, deriva series
-  ui/                  Panel, Detalle, gráficos, DCF inverso
+  ui/                  Panel, Detalle, Radar, gráficos, DCF inverso
+scripts/
+  radar_diario.py      el barrido que corre solo en GitHub Actions
+  radar_aplicar.py     mezcla al radar lo que escribió el agente
 ```
 
 ### Los tooltips se arman solos
@@ -404,6 +437,13 @@ Yahoo también publica estados contables, pero mezclarlos con los de EDGAR
 produce ratios donde el numerador y el denominador vienen de criterios
 distintos. Es la clase de error que no se nota hasta que decidís sobre un número
 que nunca existió.
+
+**La única excepción es el Radar**, y está acotada a propósito. EDGAR es un
+archivo, no un buscador: preguntarle cuáles cotizan a PER menor a 14 exigiría
+bajar entre 5 y 30 MB por cada una de las 5000 empresas. Entonces Yahoo hace de
+embudo —baja de 5000 a 40— y sus números quedan marcados como lo que son. En el
+momento en que una candidata te interesa y la abrís en el Detalle, se recalcula
+todo con EDGAR desde cero. Yahoo elige a quién mirar; EDGAR dice cuánto vale.
 
 ---
 

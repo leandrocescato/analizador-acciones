@@ -1,0 +1,100 @@
+# Barrido diario del radar.
+#
+# Corre en los servidores de GitHub, este la laptop prendida o no. No toca el
+# repositorio: el resultado va al Gist privado, que es de donde lee la app. Si
+# algo falla, GitHub te manda un mail con el log.
+#
+# Son tres pasos, y el reparto entre ellos es la decision de diseño:
+#
+#   1. BARRER    (Python)      determinista: filtra el mercado y guarda.
+#   2. DIAGNOSTICAR (Claude)   agente con buscador: escribe un JSON por empresa.
+#   3. APLICAR   (Python)      determinista: valida esos JSON y los mezcla.
+#
+# El agente nunca toca el almacen ni ve el token del Gist. Escribe archivos en
+# el runner y listo. Asi una corrida rara del paso 2 no puede romper el radar:
+# lo peor que pasa es que el paso 3 ignore un archivo mal escrito.
+
+name: Radar diario
+
+on:
+  schedule:
+    # 10:00 UTC = 07:00 en Argentina. De martes a sabado, porque cada corrida
+    # mira el cierre del dia habil anterior: el sabado trae el cierre del
+    # viernes y el lunes no hay nada nuevo que mirar.
+    - cron: "0 10 * * 2-6"
+  workflow_dispatch:
+    inputs:
+      sin_diagnostico:
+        description: "Solo barrer, sin gastar cuota de Claude"
+        type: boolean
+        default: false
+      max_diagnosticos:
+        description: "Tope de diagnosticos en esta corrida"
+        type: string
+        default: "8"
+
+jobs:
+  barrer:
+    runs-on: ubuntu-latest
+    # El techo de la corrida entera. Es tambien el freno contra un agente que
+    # se quede dando vueltas: no hay nada que pueda seguir corriendo despues.
+    timeout-minutes: 45
+
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      # ------------------------------------------------------------ 1. barrer
+      - name: Barrer el mercado
+        env:
+          # Los nombres son los que lee `app/almacen.py`. GIST_TOKEN es el
+          # token fine-grained con permiso de Gists; NO es el GITHUB_TOKEN
+          # automatico de la Action, que no puede escribir gists.
+          GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
+          GIST_ID: ${{ secrets.GIST_ID }}
+        run: |
+          python scripts/radar_diario.py \
+            --sin-diagnostico \
+            --exportar-pendientes datos/pendientes.md \
+            --max-diagnosticos "${{ inputs.max_diagnosticos || '8' }}"
+
+      # ------------------------------------------------------- 2. diagnosticar
+      #
+      # Claude Code con tu suscripcion, no con la API: `claude_code_oauth_token`
+      # se genera con `claude setup-token` y el gasto sale de tu cuota de uso.
+      #
+      # `github_token` explicito para no depender de que tengas instalada la
+      # GitHub App de Claude: este paso no comenta ni commitea nada, solo lee un
+      # archivo, busca en la web y escribe JSON en el runner.
+      - name: Diagnosticar las candidatas nuevas
+        if: ${{ inputs.sin_diagnostico != true }}
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          prompt: "Lee el archivo datos/pendientes.md y segui sus instrucciones al pie de la letra. Si dice que no hay ninguna pendiente, no hagas nada."
+          claude_args: |
+            --model claude-opus-5
+            --allowedTools "Read,Write,WebSearch"
+
+      # ------------------------------------------------------------ 3. aplicar
+      #
+      # `always()` a proposito: si el agente se quedo sin cuota a mitad de
+      # camino, lo que alcanzo a escribir se guarda igual. El resto queda
+      # pendiente y lo toma la corrida de mañana.
+      - name: Aplicar los diagnosticos al radar
+        if: ${{ always() && inputs.sin_diagnostico != true }}
+        env:
+          GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
+          GIST_ID: ${{ secrets.GIST_ID }}
+        run: python scripts/radar_aplicar.py datos/diagnosticos

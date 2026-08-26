@@ -31,6 +31,7 @@ no.
 from __future__ import annotations
 
 import json
+import os
 
 import requests
 import streamlit as st
@@ -40,6 +41,7 @@ from . import cache, config
 _API_GIST = "https://api.github.com/gists/{gist}"
 _ARCHIVO_UNIVERSO = "universo.json"
 _ARCHIVO_NOTAS = "notas.json"
+_ARCHIVO_RADAR = "radar.json"
 _TIMEOUT = 20
 
 UNIVERSO_INICIAL = ["META", "NVDA", "TSLA", "AAPL", "GOOGL", "NU"]
@@ -48,8 +50,24 @@ UNIVERSO_INICIAL = ["META", "NVDA", "TSLA", "AAPL", "GOOGL", "NU"]
 # ------------------------------------------------------------------ credenciales
 
 
+# El mismo secreto tiene dos origenes segun donde corra la app: los secretos de
+# Streamlit cuando es la interfaz, y variables de entorno cuando es el barrido
+# diario de GitHub Actions, que no tiene secrets.toml. Los nombres de entorno
+# son propios a proposito: `GITHUB_TOKEN` ya significa otra cosa adentro de una
+# Action y usarlo aca haria que el barrido intentara escribir el gist con un
+# token que no tiene permiso para hacerlo.
+_ENV = {
+    "github_token": "GIST_TOKEN",
+    "gist_id": "GIST_ID",
+    "email_sec": "EMAIL_SEC",
+}
+
+
 def _secreto(nombre: str) -> str | None:
     """Lee un secreto sin explotar cuando no hay archivo de secretos."""
+    desde_entorno = os.environ.get(_ENV.get(nombre, nombre.upper()))
+    if desde_entorno and desde_entorno.strip():
+        return desde_entorno.strip()
     try:
         valor = st.secrets.get(nombre)
     except Exception:
@@ -184,6 +202,44 @@ def guardar_nota(ticker: str, texto: str) -> None:
     else:
         notas.pop(ticker, None)
     _subir_gist(_ARCHIVO_NOTAS, notas)
+
+
+# ------------------------------------------------------------------ radar
+
+# El radar es la unica de las tres cosas guardadas que NO la escribis vos: la
+# escribe el barrido diario. Va al mismo gist igual, y por el mismo motivo. Si
+# viviera solo en el disco, cada reinicio de Streamlit Cloud borraria las
+# candidatas del dia y el telefono mostraria un radar vacio hasta la corrida
+# siguiente. Ademas es lo que conecta las dos mitades: la Action escribe, la
+# app lee, y ninguna de las dos sabe de la otra.
+
+RADAR_VACIO = {"corrida": None, "filtros": {}, "candidatas": [], "descartadas": {}}
+
+
+def _radar_local() -> dict:
+    if not config.RUTA_RADAR.exists():
+        return dict(RADAR_VACIO)
+    try:
+        return json.loads(config.RUTA_RADAR.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return dict(RADAR_VACIO)
+
+
+def leer_radar() -> dict:
+    if not hay_remoto():
+        return _radar_local()
+    try:
+        guardado = _bajar_gist().get(_ARCHIVO_RADAR)
+    except Exception:
+        return _radar_local()
+    return guardado or dict(RADAR_VACIO)
+
+
+def guardar_radar(datos: dict) -> None:
+    config.RUTA_RADAR.write_text(
+        json.dumps(datos, ensure_ascii=False, indent=1), encoding="utf-8")
+    if hay_remoto():
+        _subir_gist(_ARCHIVO_RADAR, datos)
 
 
 # ------------------------------------------------------------------ diagnostico

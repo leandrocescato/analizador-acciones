@@ -28,6 +28,7 @@ DIR_DATOS.mkdir(exist_ok=True)
 
 RUTA_CACHE = DIR_DATOS / "cache.db"
 RUTA_UNIVERSO = DIR_DATOS / "universo.txt"
+RUTA_RADAR = DIR_DATOS / "radar.json"
 RUTA_CA_BUNDLE = DIR_DATOS / "ca_bundle.pem"
 
 # ---------------------------------------------------------------- SSL / Avast

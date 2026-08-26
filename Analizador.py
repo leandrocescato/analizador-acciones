@@ -15,7 +15,7 @@ st.set_page_config(
 )
 
 from app import acceso, almacen  # noqa: E402  (despues de set_page_config)
-from app.ui import detalle, panel  # noqa: E402
+from app.ui import detalle, panel, radar  # noqa: E402
 
 
 def main():
@@ -25,14 +25,27 @@ def main():
 
     with st.sidebar:
         st.markdown("### 📊 Analizador de Acciones")
+        # El Radar manda al Detalle cuando tocas "Ver en el Detalle" en una
+        # candidata, y para eso tiene que mover este radio. No puede escribir
+        # `pagina` directamente: Streamlit prohibe tocar la clave de un widget
+        # despues de dibujarlo, y el Radar se dibuja despues de esta linea. Por
+        # eso deja una señal de un solo uso que se consume aca, antes.
+        destino = st.session_state.pop("ir_a_pagina", None)
+        if destino:
+            st.session_state["pagina"] = destino
+
         pagina = st.radio(
-            "Vista", ["Panel", "Detalle"], label_visibility="collapsed",
-            captions=["Una fila por accion", "Analisis profundo de una empresa"],
+            "Vista", ["Panel", "Detalle", "Radar"], key="pagina",
+            label_visibility="collapsed",
+            captions=["Una fila por accion", "Analisis profundo de una empresa",
+                      "Candidatas que trajo el barrido diario"],
         )
         st.divider()
 
     if pagina == "Panel":
         panel.render()
+    elif pagina == "Radar":
+        radar.render()
     else:
         detalle.render()
 
