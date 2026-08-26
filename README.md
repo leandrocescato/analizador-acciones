@@ -314,6 +314,74 @@ toma la primera que cubra *ese año*. La pestaña de auditoría XBRL del Detalle
 muestra exactamente qué etiqueta se usó en cada año, y marca dónde hubo que
 combinar varias.
 
+### Elegir la etiqueta que no es no se ve como un error
+
+Resolver año por año no alcanza: falta elegir bien *cuál* etiqueta va primero.
+Los ingresos salían de `RevenueFromContractWithCustomerExcludingAssessedTax`,
+que es solo la venta bajo contrato con clientes (ASC 606). Todo lo que la
+empresa cobra por fuera de un contrato queda afuera: alquileres, intereses de
+créditos, primas de seguro, coberturas.
+
+El resultado no era un error visible. Era un número del orden correcto, y menor:
+
+| Empresa | Lo que mostraba | Lo que publica | Qué faltaba |
+|---|---:|---:|---|
+| Bloom Energy (BE) | 2.002 M | **2.024 M** | leasing de equipos |
+| MercadoLibre (MELI) | 20.335 M | **28.893 M** | intereses del crédito |
+| CNA Financial (CNA) | 1.577 M | **14.989 M** | primas de seguro |
+
+CNA es la medida del agujero: una aseguradora se veía **diez veces más chica**
+de lo que es. Ahora va primero `Revenues`, que es la etiqueta del total, la
+línea "Total revenue" de la cara del estado.
+
+### Las cuentas tienen que cerrar, y ahora se controla que cierren
+
+El error de arriba estuvo meses sin que nadie lo notara, y **la empresa misma
+lo delataba**: Bloom publica costo de ventas 1.437 M y ganancia bruta 587 M, que
+suman 2.024 M, no 2.002 M. Son tres etiquetas distintas que tienen que sumar por
+definición.
+
+`app/validacion.py` corre esas identidades sobre cada ficha y las muestra en el
+Detalle, arriba de la auditoría XBRL:
+
+- ingresos = costo de ventas + ganancia bruta
+- activo = pasivo + patrimonio (+ minoritario, + patrimonio temporal)
+- antes de impuesto − impuesto = ganancia neta *(aviso: hay renglones en el medio)*
+- ganancia neta / acciones diluidas = EPS diluido *(aviso: es un promedio ponderado)*
+
+No corrige nada: marca el año y la etiqueta para ir a buscarlo al informe. Una
+identidad rota puede ser el extractor o puede ser la empresa, y cuál de las dos
+es se decide abriendo el 10-K.
+
+El control encontró otros tres errores apenas se encendió, todos en esta misma
+familia de "número plausible y falso":
+
+**El balance salía de un trimestre.** Los conceptos de balance son instantes: no
+tienen duración que revisar, así que el filtro que descarta trimestres en el
+estado de resultados no los protegía. Y un 10-K trae instantes que no son el
+cierre —el estado de evolución del patrimonio arrastra saldos intermedios—. El
+balance 2018 de Bloom salía del **31 de marzo**: activo 1.214 M en lugar de
+1.522 M y patrimonio −2.213 M en lugar de −143 M. Ahora un instante solo se
+acepta si cae en el mes de cierre del ejercicio.
+
+**El EPS histórico no estaba ajustado por split.** Las acciones sí, el EPS no,
+así que la serie quedaba partida al medio en la fecha del split: Apple mostraba
+9,21 dólares por acción en 2017 y 2,98 en 2018, un derrumbe del 68% que nunca
+ocurrió. Alphabet necesitó además otro detector: informó las acciones por clase
+A, B y C hasta 2021, y la API de EDGAR solo devuelve hechos sin dimensiones, así
+que no hay serie de acciones donde ver el split de 20 a 1. Se deduce del EPS
+**con la ganancia neta de testigo**: repartir la misma torta en veinte pedazos
+no cambia la torta, así que un EPS que cae a 1/20 con la ganancia neta intacta
+solo puede ser un split.
+
+**Un cambio de escala del emisor se leía como un split.** Nu Holdings informa
+las acciones del ejercicio 2021 en miles (334.436) en un 20-F y en unidades
+(1.602.126.000) en otro. El cociente da 15.079, y el detector lo tomaba por un
+split. Ninguna empresa hace un split de quince mil a uno: ahora hay una banda de
+lo que puede ser un split de verdad, y un año que quede a dos órdenes de
+magnitud del resto de su propia serie se descarta en vez de publicarse. El
+Detalle lista qué se descartó y por qué.
+
 ### Un banco no se mide con la vara de una industrial
 
 Los depósitos de un banco son su materia prima, no su financiamiento; su deuda
@@ -472,6 +540,13 @@ todo con EDGAR desde cero. Yahoo elige a quién mirar; EDGAR dice cuánto vale.
   Los retailers que cierran a fin de enero pueden quedar etiquetados un año
   adelante respecto de cómo ellos nombran su ejercicio. No afecta los ratios
   porque todos los conceptos de una empresa usan la misma regla.
+- **Un balance viejo puede mezclar dos reexpresiones.** Cada concepto toma la
+  presentación más reciente que lo cubra, y no siempre es la misma para las tres
+  patas del balance: First Solar reexpresó el patrimonio de 2015 en el informe
+  de 2018 y nunca volvió a presentar el activo de ese año. La ecuación queda
+  descuadrada menos del 1%, siempre en ejercicios viejos, y el control de
+  coherencia del Detalle lo marca. Los dos números son los que la empresa
+  presentó; lo que cambia es de qué informe salió cada uno.
 - **Yahoo Finance no es una API oficial** y se rompe cada tanto. Los precios
   tienen respaldo en Stooq; beta y sector no, y pueden aparecer vacíos.
 - **Los umbrales del semáforo son heurísticas de valor**, no verdades. Señalan

@@ -41,6 +41,9 @@ class Empresa:
     series: dict[str, dict[int, float]] = field(default_factory=dict)
     procedencia: dict[str, dict[int, dict]] = field(default_factory=dict)
     faltantes: list[str] = field(default_factory=list)
+    # Valores que EDGAR trae pero que no se publican porque contradicen al
+    # resto de la serie. Ver `edgar.fundamentals`.
+    descartados: list[dict] = field(default_factory=list)
     mercado: dict[str, Any] = field(default_factory=dict)
     retornos: dict[str, Any] = field(default_factory=dict)
     error: str | None = None
@@ -380,6 +383,7 @@ def cargar(ticker: str, con_mercado: bool = True) -> Empresa:
         series=series,
         procedencia=fund["procedencia"],
         faltantes=fund["faltantes"],
+        descartados=fund.get("descartados", []),
         perfil=fund.get("perfil", perfiles.GENERAL),
         sic=fund.get("sic", ""),
         sic_desc=fund.get("sic_desc", ""),

@@ -18,7 +18,7 @@ import html
 import pandas as pd
 import streamlit as st
 
-from .. import alertas, almacen, cache, estilo, glosario, perfiles
+from .. import alertas, almacen, cache, estilo, glosario, perfiles, validacion
 from ..conceptos import GRUPOS, POR_CLAVE
 from ..metricas import base
 from ..proveedores import edgar, mercado
@@ -34,7 +34,8 @@ ESTADO_BALANCE = [
     "efectivo", "inversiones_cp", "por_cobrar", "inventario", "activo_corriente",
     "ppe_neto", "goodwill", "intangibles", "activo_total",
     "por_pagar", "pasivo_corriente", "deuda_cp", "deuda_lp", "leases_total",
-    "pasivo_total", "resultados_acumulados", "patrimonio", "patrimonio_tangible",
+    "pasivo_total", "patrimonio_temporal", "minoritario_rescatable",
+    "resultados_acumulados", "patrimonio", "patrimonio_tangible",
     "deuda_total", "caja_total", "deuda_neta", "capital_trabajo",
 ]
 ESTADO_FLUJO = [
@@ -956,6 +957,71 @@ def _bloque_diagnostico_mercado(emp):
             )
 
 
+def _bloque_control(emp):
+    """Identidades contables que tienen que cerrar, y no cierran.
+
+    Va antes de la auditoria de etiquetas porque responde la pregunta anterior:
+    la auditoria dice de donde salio cada numero, esto dice si los numeros son
+    coherentes entre si. Cuando algo aparece aca, la auditoria es donde se mira
+    despues.
+    """
+    datos = {"series": emp.series, "procedencia": emp.procedencia, "anios": emp.anios}
+    hallazgos = validacion.revisar(datos)
+    cuenta = validacion.resumen(hallazgos)
+    descartados = emp.descartados or []
+
+    if not hallazgos and not descartados:
+        st.success(
+            "Los estados contables cierran: los ingresos coinciden con el costo "
+            "mas la ganancia bruta, el activo con el pasivo mas el patrimonio, y "
+            "la ganancia por accion con la division que la define.",
+            icon=":material/verified:")
+        return
+
+    partes = []
+    if cuenta["grave"]:
+        partes.append(f"{cuenta['grave']} identidad(es) que no cierran")
+    if cuenta["aviso"]:
+        partes.append(f"{cuenta['aviso']} aviso(s)")
+    if descartados:
+        partes.append(f"{len(descartados)} dato(s) descartado(s)")
+    titulo = "Control de coherencia — " + ", ".join(partes)
+
+    with st.expander(titulo, expanded=bool(cuenta["grave"])):
+        st.caption(
+            "Estas cuentas tienen que dar por definicion, no por aproximacion. "
+            "Cuando una no da, o el extractor tomo una etiqueta que mide otra "
+            "cosa, o la empresa presenta algo fuera de lo comun. Cual de las dos "
+            "se decide abriendo el informe: aca abajo esta el año y la etiqueta "
+            "para buscarlo."
+        )
+
+        for hallazgo in hallazgos:
+            icono = ":material/error:" if hallazgo.severidad == "grave" else ":material/info:"
+            texto = (f"**{hallazgo.anio} · {hallazgo.identidad}** "
+                     f"({hallazgo.desvio:+.1f}%)\n\n{hallazgo.detalle}")
+            if hallazgo.severidad == "grave":
+                st.error(texto, icon=icono)
+            else:
+                st.info(texto, icon=icono)
+
+        if descartados:
+            st.caption(
+                "Ademas, estos valores estaban en EDGAR y no se publican: "
+                "contradicen al resto de su propia serie, casi siempre porque el "
+                "emisor cambio la escala de sus etiquetas. Mostrarlos seria peor "
+                "que dejarlos vacios, porque no se ven mal."
+            )
+            st.dataframe(
+                pd.DataFrame([
+                    {"Año": d["anio"], "Concepto": POR_CLAVE[d["concepto"]].descripcion,
+                     "Valor descartado": f"{d['valor']:,.2f}",
+                     "Etiqueta": d["etiqueta"], "Motivo": d["motivo"]}
+                    for d in descartados
+                ]),
+                hide_index=True, width="stretch")
+
+
 def _bloque_auditoria(emp):
     with st.expander("Auditoria de etiquetas XBRL"):
         st.caption(
@@ -1074,6 +1140,7 @@ def render():
     _bloque_valuacion(emp, met)
     st.divider()
     _bloque_metricas(emp, met)
+    _bloque_control(emp)
     _bloque_auditoria(emp)
     _bloque_diagnostico_mercado(emp)
     st.divider()

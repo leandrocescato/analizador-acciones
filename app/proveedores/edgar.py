@@ -304,6 +304,47 @@ def _duracion_valida(hecho: dict) -> bool:
     return 300 <= dias <= 400
 
 
+# Cuantos dias puede correrse el cierre respecto del borde del mes sin dejar de
+# ser el cierre. Las empresas de 52/53 semanas cierran en un dia de semana fijo,
+# asi que la fecha se mueve unos dias de un ejercicio al siguiente y a veces
+# cruza el cambio de mes.
+_DIAS_DERIVA_CIERRE = 15
+
+
+def _es_cierre_de_ejercicio(fin: str, mes_cierre: int | None) -> bool:
+    """Si esa fecha es un cierre anual y no una foto intermedia.
+
+    Los conceptos de balance son instantes: no tienen duracion que revisar, asi
+    que el filtro que descarta trimestres en el estado de resultados no los
+    protege. Y un 10-K trae instantes que NO son el cierre del ejercicio: el
+    estado de evolucion del patrimonio arrastra saldos intermedios, y quedan
+    etiquetados en el mismo informe anual.
+
+    Bloom Energy mostraba esto. El balance de 2018 salia del 31 de marzo de
+    2018: activo 1.214 M contra los 1.522 M del cierre, y un patrimonio de
+    -2.213 M contra -143 M. Numeros reales de la empresa, del trimestre
+    equivocado. La ecuacion del balance no cerraba por 1.673 millones y era la
+    unica señal de que algo andaba mal.
+    """
+    if mes_cierre is None:
+        return True
+    try:
+        fecha = dt.date.fromisoformat(fin)
+    except (ValueError, TypeError):
+        return False
+    if fecha.month == mes_cierre:
+        return True
+    # El cierre se corrio al mes siguiente (cierra los primeros dias) o al
+    # anterior (cierra los ultimos): sigue siendo el mismo cierre.
+    siguiente = mes_cierre % 12 + 1
+    previo = (mes_cierre - 2) % 12 + 1
+    if fecha.month == siguiente and fecha.day <= _DIAS_DERIVA_CIERRE:
+        return True
+    if fecha.month == previo and fecha.day >= 31 - _DIAS_DERIVA_CIERRE:
+        return True
+    return False
+
+
 def _unidades_del_concepto(bloque: dict, concepto: Concepto) -> list[dict]:
     """Elige la lista de hechos en la unidad correcta.
 
@@ -335,7 +376,8 @@ def _moneda_reportada(facts: dict) -> str | None:
     return None
 
 
-def _hechos_anuales(facts: dict, etiqueta: str, concepto: Concepto) -> dict[int, dict]:
+def _hechos_anuales(facts: dict, etiqueta: str, concepto: Concepto,
+                    mes_cierre: int | None = None) -> dict[int, dict]:
     """Devuelve {año: hecho} para una etiqueta XBRL puntual.
 
     Si hay varias presentaciones del mismo periodo (original y reexpresada),
@@ -357,6 +399,9 @@ def _hechos_anuales(facts: dict, etiqueta: str, concepto: Concepto) -> dict[int,
             continue
         if concepto.tipo == "instante" and hecho.get("start"):
             continue
+        if concepto.tipo == "instante" and not _es_cierre_de_ejercicio(
+                hecho.get("end"), mes_cierre):
+            continue
 
         anio = _anio_fiscal(hecho.get("end"))
         if anio is None or hecho.get("val") is None:
@@ -368,7 +413,8 @@ def _hechos_anuales(facts: dict, etiqueta: str, concepto: Concepto) -> dict[int,
     return salida
 
 
-def serie_por_concepto(facts: dict, concepto: Concepto, anios: list[int]) -> dict[int, dict]:
+def serie_por_concepto(facts: dict, concepto: Concepto, anios: list[int],
+                       mes_cierre: int | None = None) -> dict[int, dict]:
     """Resuelve un concepto contra sus etiquetas candidatas, AÑO POR AÑO.
 
     Este es el corazon del extractor y la razon por la que existe este modulo.
@@ -383,7 +429,7 @@ def serie_por_concepto(facts: dict, concepto: Concepto, anios: list[int]) -> dic
     for etiqueta in concepto.etiquetas:
         if not faltantes:
             break
-        encontrados = _hechos_anuales(facts, etiqueta, concepto)
+        encontrados = _hechos_anuales(facts, etiqueta, concepto, mes_cierre)
         for anio in sorted(faltantes):
             hecho = encontrados.get(anio)
             if hecho is None:
@@ -402,29 +448,50 @@ def serie_por_concepto(facts: dict, concepto: Concepto, anios: list[int]) -> dic
 
 # ------------------------------------------------------------------ splits
 
-# Conceptos medidos en acciones: son los unicos que un split reescala.
+# Conceptos medidos en acciones: un split los multiplica.
 _CONCEPTOS_ACCIONES = ("acciones_dil", "acciones_bas", "acciones_circulacion")
+
+# La ganancia por accion se mueve al REVES: un split de 4 a 1 cuadruplica las
+# acciones y divide el EPS por cuatro. Si se ajustan las acciones y el EPS no,
+# la serie queda partida al medio en la fecha del split. Apple mostraba 9,21
+# dolares por accion en 2017 y 2,98 en 2018 —un derrumbe del 68% que nunca
+# ocurrio— porque el informe de 2020 reexpreso los dos años mas recientes y
+# dejo los anteriores en la escala vieja.
+#
+# El split NO se detecta sobre el EPS mismo. Un EPS es un numero chico y se
+# reexpresa por cosas que no son splits (una operacion discontinuada reclasifica
+# y lo mueve mas del 40% sin problema), asi que buscarle saltos ahi confunde
+# reexpresion con split. Se detecta sobre el conteo de acciones, que son cifras
+# grandes donde un salto de esa magnitud en un ejercicio ya cerrado no puede ser
+# otra cosa, y se aplica invertido.
+_EPS_POR_ACCIONES = {"eps_diluido": "acciones_dil", "eps_basico": "acciones_bas"}
 
 # Un cambio de escala de esta magnitud entre dos presentaciones del MISMO
 # ejercicio no puede ser otra cosa que un split: los numeros de un ejercicio
 # cerrado no se corrigen un 40% por una reexpresion contable.
 _SALTO_SPLIT = 1.4
 
+# Techo y piso de lo que puede ser un split de verdad. El mas grande que se ve
+# en la practica es 20 a 1 y algun 50 a 1 aislado; del otro lado, un reverse
+# split de una empresa al borde del delisting llega a 1 en 200. Nada mas alla
+# de esta banda es un split: es la empresa que cambio la escala de sus propias
+# etiquetas.
+#
+# Nu Holdings lo hace. En el 20-F de 2021 informa las acciones en miles
+# (334.436) y en el de 2023 las mismas del ejercicio 2021 en unidades
+# (1.602.126.000). El cociente da 15.079, y sin este limite el extractor lo
+# tomaba por un split y multiplicaba por quince mil toda la serie previa.
+_SPLIT_MAXIMO = 100.0
+_SPLIT_MINIMO = 1 / 500.0
 
-def _eventos_split(facts: dict, concepto: Concepto) -> list[tuple[str, float]]:
-    """Splits detectados, como (fecha de la primera presentacion en la escala nueva, proporcion).
 
-    NO se infiere del salto entre un año y el siguiente: ahi el split viene
-    mezclado con la emision o recompra real del periodo, y separarlos es
-    adivinar. Tesla saltaba 3,66x entre 2019 y 2020, que es un split de 3 a 1
-    multiplicado por un 22% de emision genuina.
+def _split_plausible(proporcion: float) -> bool:
+    return _SPLIT_MINIMO <= proporcion <= _SPLIT_MAXIMO
 
-    La proporcion esta en los datos: el mismo ejercicio 2018 aparece con 170,5
-    millones de acciones en el informe de 2019 y con 853 millones en el de
-    2021. El cociente entre esas dos cifras es exactamente el split, sin nada
-    mas adentro, porque el ejercicio es el mismo.
-    """
-    por_anio: dict[int, dict[str, float]] = {}
+
+def _versiones_por_anio(facts: dict, concepto: Concepto) -> dict[int, dict[str, float]]:
+    """{año fiscal: {fecha de presentacion: valor}} para todas las etiquetas del concepto."""
+    salida: dict[int, dict[str, float]] = {}
     for etiqueta in concepto.etiquetas:
         for espacio in _ESPACIOS:
             bloque = facts.get("facts", {}).get(espacio, {}).get(etiqueta)
@@ -443,20 +510,90 @@ def _eventos_split(facts: dict, concepto: Concepto) -> list[tuple[str, float]]:
             presentado, valor = hecho.get("filed"), hecho.get("val")
             if anio is None or not presentado or not valor:
                 continue
-            por_anio.setdefault(anio, {})[presentado] = float(valor)
+            salida.setdefault(anio, {})[presentado] = float(valor)
+    return salida
 
+
+def _eventos_split(facts: dict, concepto: Concepto) -> list[tuple[str, float]]:
+    """Splits detectados, como (fecha de la primera presentacion en la escala nueva, proporcion).
+
+    NO se infiere del salto entre un año y el siguiente: ahi el split viene
+    mezclado con la emision o recompra real del periodo, y separarlos es
+    adivinar. Tesla saltaba 3,66x entre 2019 y 2020, que es un split de 3 a 1
+    multiplicado por un 22% de emision genuina.
+
+    La proporcion esta en los datos: el mismo ejercicio 2018 aparece con 170,5
+    millones de acciones en el informe de 2019 y con 853 millones en el de
+    2021. El cociente entre esas dos cifras es exactamente el split, sin nada
+    mas adentro, porque el ejercicio es el mismo.
+    """
     crudos: dict[str, list[float]] = {}
-    for versiones in por_anio.values():
+    for versiones in _versiones_por_anio(facts, concepto).values():
         ordenadas = sorted(versiones.items())
         for (_, previo), (fecha, actual) in zip(ordenadas, ordenadas[1:]):
             if previo <= 0:
                 continue
             proporcion = actual / previo
             if proporcion >= _SALTO_SPLIT or proporcion <= 1 / _SALTO_SPLIT:
-                crudos.setdefault(fecha, []).append(proporcion)
+                if _split_plausible(proporcion):
+                    crudos.setdefault(fecha, []).append(proporcion)
 
     # Un mismo split aparece desde varios ejercicios: se consolida con la
     # mediana, que absorbe el redondeo de las cifras reexpresadas.
+    return sorted((fecha, _mediana(valores)) for fecha, valores in crudos.items())
+
+
+# Cuanto puede moverse la ganancia neta de un ejercicio entre dos presentaciones
+# y seguir considerandose "la misma": redondeos y reclasificaciones menores.
+_NETA_ESTABLE = 0.02
+
+
+def _eventos_split_por_eps(facts: dict, concepto_eps: Concepto) -> list[tuple[str, float]]:
+    """Splits deducidos del EPS, con la ganancia neta de testigo.
+
+    Hace falta para las empresas que no publican un conteo de acciones sin
+    desagregar. Alphabet es el caso: hasta 2021 informo las acciones abiertas
+    por clase A, B y C, y la API de EDGAR solo devuelve los hechos sin
+    dimensiones, asi que no hay serie de acciones anterior a 2022 donde buscar
+    el salto. El split de 20 a 1 de julio de 2022 quedaba invisible y el EPS de
+    2019 se mostraba en 49,16 dolares al lado de 2,93 en 2020.
+
+    Un EPS reexpresado, solo, no alcanza para afirmar que hubo un split: una
+    operacion discontinuada lo reclasifica y lo mueve tanto o mas. Lo que
+    distingue un split es que la GANANCIA NETA de ese mismo ejercicio no se
+    toca. Es el numerador: repartir la misma torta en veinte pedazos no cambia
+    la torta. Asi que solo se acepta el salto cuando las dos presentaciones
+    informan la misma ganancia neta para ese año.
+    """
+    eps_por_anio = _versiones_por_anio(facts, concepto_eps)
+    neta_por_anio = _versiones_por_anio(facts, POR_CLAVE["ganancia_neta"])
+
+    crudos: dict[str, list[float]] = {}
+    for anio, versiones in eps_por_anio.items():
+        netas = neta_por_anio.get(anio, {})
+        ordenadas = sorted(versiones.items())
+        for (fecha_previa, previo), (fecha, actual) in zip(ordenadas, ordenadas[1:]):
+            # Un EPS puede ser negativo. Si las dos presentaciones no tienen el
+            # mismo signo el cociente no significa nada: la empresa paso de
+            # ganancia a perdida al reexpresar, que es lo contrario de un split.
+            if previo == 0 or actual == 0 or (previo > 0) != (actual > 0):
+                continue
+            proporcion = actual / previo
+            if 1 / _SALTO_SPLIT < proporcion < _SALTO_SPLIT:
+                continue
+            if not _split_plausible(proporcion) or not _split_plausible(1 / proporcion):
+                continue
+            neta_previa, neta_actual = netas.get(fecha_previa), netas.get(fecha)
+            if not neta_previa or not neta_actual:
+                continue  # sin testigo no se afirma nada
+            if abs(neta_actual / neta_previa - 1) > _NETA_ESTABLE:
+                continue  # cambio la ganancia: es reexpresion, no split
+            # Se guarda invertida a proposito: `_factor_split` habla en la
+            # escala de las ACCIONES, donde un split de 20 a 1 vale 20. Sobre el
+            # EPS el mismo split vale 1/20, asi que aca se da vuelta y despues
+            # todos los conceptos por accion se dividen por el mismo factor.
+            crudos.setdefault(fecha, []).append(1 / proporcion)
+
     return sorted((fecha, _mediana(valores)) for fecha, valores in crudos.items())
 
 
@@ -476,6 +613,51 @@ def _factor_split(eventos: list[tuple[str, float]], presentado: str | None) -> f
         if fecha > presentado:
             factor *= proporcion
     return factor
+
+
+# ------------------------------------------------- coherencia de escala
+
+# Cuanto puede apartarse un año del resto de su propia serie antes de tomarse
+# por un error de escala del emisor y no por un dato. Cien veces es enorme: las
+# acciones de una empresa no se multiplican por cien de un ejercicio al
+# siguiente, ni siquiera saliendo a bolsa. Lo que si pasa es que el emisor
+# informe un año en miles y el siguiente en unidades.
+_QUIEBRE_ESCALA = 100.0
+
+# Cuanto puede diferir el EPS publicado de la division ganancia/acciones antes
+# de descartarlo. Diez veces no lo explica ningun dividendo preferido ni ningun
+# promedio ponderado: es otra magnitud.
+_EPS_INCOHERENTE = 10.0
+
+# Cuando no hay conteo de acciones para ese año, el control se hace al reves:
+# dividir la ganancia neta por el EPS tiene que dar una cantidad de acciones
+# creible. Si da ochenta, lo que se leyo no era un EPS.
+#
+# Nu Holdings lo necesita. En el 20-F de 2021 el elemento de EPS de 2019 trae
+# 1.137.931, que sobre una perdida de 92,5 millones implica 81 acciones en
+# circulacion. Es un conteo de acciones metido en el casillero del EPS.
+_ACCIONES_MINIMAS_CREIBLES = 10_000.0
+
+
+def _quiebres_de_escala(serie: dict[int, dict]) -> list[int]:
+    """Años cuyo valor esta a mas de dos ordenes de magnitud de su propia serie.
+
+    Se compara contra la mediana y no contra el año vecino: la mediana no se
+    mueve aunque haya varios años mal, y con dos o tres años sospechosos el
+    vecino deja de ser una referencia.
+    """
+    magnitudes = [abs(d["valor"]) for d in serie.values() if d["valor"]]
+    if len(magnitudes) < 3:
+        return []
+    referencia = _mediana(magnitudes)
+    if not referencia:
+        return []
+    return [
+        anio for anio, dato in serie.items()
+        if dato["valor"] and not (
+            1 / _QUIEBRE_ESCALA <= abs(dato["valor"]) / referencia <= _QUIEBRE_ESCALA
+        )
+    ]
 
 
 # ------------------------------------------------------------------ API publica
@@ -515,9 +697,12 @@ def fundamentals(ticker: str, anios: int | None = None) -> dict:
     series: dict[str, dict[int, float]] = {}
     procedencia: dict[str, dict[int, dict]] = {}
     faltantes: list[str] = []
+    descartados: list[dict] = []
+
+    mes_cierre = _mes_cierre_fiscal(facts)
 
     for concepto in TODOS:
-        crudo = serie_por_concepto(facts, concepto, rango)
+        crudo = serie_por_concepto(facts, concepto, rango, mes_cierre)
         if not crudo:
             faltantes.append(concepto.clave)
             continue
@@ -533,10 +718,67 @@ def fundamentals(ticker: str, anios: int | None = None) -> dict:
                     dato["valor"] *= _factor_split(eventos, dato.get("presentado"))
                     dato["split_ajustado"] = True
 
+        elif concepto.clave in _EPS_POR_ACCIONES:
+            eventos = _eventos_split(facts, POR_CLAVE[_EPS_POR_ACCIONES[concepto.clave]])
+            if not eventos:
+                eventos = _eventos_split_por_eps(facts, concepto)
+            if eventos:
+                for anio, dato in crudo.items():
+                    factor = _factor_split(eventos, dato.get("presentado"))
+                    if factor:
+                        dato["valor"] /= factor
+                        dato["split_ajustado"] = True
+
+        # Un año en otra escala que el resto de su serie no es un dato: es el
+        # emisor que cambio de unidad. Se descarta en vez de publicarlo, por lo
+        # mismo que no se acepta un importe en otra moneda: un numero mal
+        # escalado no se ve mal, se ve grande.
+        if concepto.clave in _CONCEPTOS_ACCIONES:
+            for anio in _quiebres_de_escala(crudo):
+                descartados.append({
+                    "concepto": concepto.clave, "anio": anio,
+                    "valor": crudo[anio]["valor"],
+                    "etiqueta": crudo[anio].get("etiqueta", "?"),
+                    "motivo": "escala incoherente con el resto de la serie",
+                })
+                del crudo[anio]
+            if not crudo:
+                faltantes.append(concepto.clave)
+                continue
+
         series[concepto.clave] = {a: d["valor"] for a, d in crudo.items()}
         procedencia[concepto.clave] = {
             a: {k: v for k, v in d.items() if k != "valor"} for a, d in crudo.items()
         }
+
+    # El EPS se contrasta contra la division que lo define. Va aca y no en el
+    # bucle porque necesita la ganancia neta y las acciones ya resueltas.
+    for clave, clave_acciones in _EPS_POR_ACCIONES.items():
+        eps, neta = series.get(clave) or {}, series.get("ganancia_neta") or {}
+        acciones = series.get(clave_acciones) or {}
+        for anio in sorted(eps):
+            if anio not in neta or not eps[anio]:
+                continue
+            if acciones.get(anio):
+                calculado = neta[anio] / acciones[anio]
+                if not calculado:
+                    continue
+                if abs(eps[anio] / calculado) <= _EPS_INCOHERENTE and                    abs(calculado / eps[anio]) <= _EPS_INCOHERENTE:
+                    continue
+                motivo = f"no se parece a la ganancia sobre las acciones ({calculado:,.2f})"
+            else:
+                implicitas = abs(neta[anio] / eps[anio])
+                if implicitas >= _ACCIONES_MINIMAS_CREIBLES:
+                    continue
+                motivo = (f"implicaria {implicitas:,.0f} acciones en circulacion; "
+                          f"no es una ganancia por accion")
+            descartados.append({
+                "concepto": clave, "anio": anio, "valor": eps[anio],
+                "etiqueta": procedencia[clave][anio].get("etiqueta", "?"),
+                "motivo": motivo,
+            })
+            del series[clave][anio]
+            del procedencia[clave][anio]
 
     # Años efectivamente cubiertos: los que tienen ingresos o ganancia neta.
     cubiertos = sorted(
@@ -568,6 +810,7 @@ def fundamentals(ticker: str, anios: int | None = None) -> dict:
         "series": series,
         "procedencia": procedencia,
         "faltantes": faltantes,
+        "descartados": descartados,
         "perfil": perfil,
         "sic": ident.get("sic", ""),
         "sic_desc": ident.get("sic_desc", ""),

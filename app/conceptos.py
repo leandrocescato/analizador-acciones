@@ -58,8 +58,26 @@ def _c(clave, etiquetas, **kw) -> Concepto:
 
 RESULTADOS = [
     _c("ingresos", [
-        "RevenueFromContractWithCustomerExcludingAssessedTax",
+        # `Revenues` PRIMERO, y no es un detalle de gusto. Es la etiqueta del
+        # total: la linea "Total revenue" de la cara del estado de resultados.
+        # `RevenueFromContractWithCustomer...` es solo la parte que cae bajo
+        # ASC 606, o sea las ventas a clientes por contrato. Todo lo que la
+        # empresa cobra por fuera de un contrato con cliente queda afuera:
+        # alquileres y leasings, intereses de creditos, primas de seguro,
+        # coberturas. En una empresa que solo vende productos las dos etiquetas
+        # dan igual y el orden no se nota. En las demas, tomar la de contratos
+        # devuelve un numero MENOR que el que la empresa publica, y creible:
+        #   BE    2025:  2.002 M contra 2.024 M reales (leasings de equipos)
+        #   MELI  2025: 20.335 M contra 28.893 M reales (intereses del credito)
+        #   CNA   2025:  1.577 M contra 14.989 M reales (primas de seguro)
+        # El caso de CNA muestra el tamaño del agujero: una aseguradora se veia
+        # diez veces mas chica de lo que es.
+        #
+        # Al reves tambien pasa: NFG etiqueta 3.061 M de contratos en 2022 y
+        # publica 2.186 M, porque las perdidas de cobertura se netean contra el
+        # ingreso. `Revenues` es el numero que quedo impreso en el 10-K.
         "Revenues",
+        "RevenueFromContractWithCustomerExcludingAssessedTax",
         "RevenueFromContractWithCustomerIncludingAssessedTax",
         "SalesRevenueNet",
         "SalesRevenueGoodsNet",
@@ -241,6 +259,29 @@ BALANCE = [
         # IFRS
         "NoncontrollingInterests",
     ], tipo="instante", descripcion="Participacion minoritaria"),
+
+    # Patrimonio temporal, el renglon que no es ni pasivo ni patrimonio y vive
+    # entre los dos. Son instrumentos que la empresa puede verse obligada a
+    # recomprar —preferidas rescatables, participaciones con opcion de venta— y
+    # que por eso las normas de EE.UU. no dejan poner en el patrimonio ni en el
+    # pasivo. En la practica: `Assets` no es igual a `Liabilities` mas
+    # `StockholdersEquity` en ninguna empresa que tenga esto, y la diferencia no
+    # es un error de extraccion.
+    #
+    # No es una rareza. Tesla llevaba 643 millones de participaciones
+    # rescatables en 2019, y Bloom Energy 1.524 millones en 2017, antes de salir
+    # a bolsa, que era mas que su activo total.
+    _c("patrimonio_temporal", [
+        "TemporaryEquityCarryingAmountIncludingPortionAttributableToNoncontrollingInterests",
+        "TemporaryEquityCarryingAmountAttributableToParent",
+        "TemporaryEquityValueExcludingAdditionalPaidInCapital",
+    ], tipo="instante", descripcion="Patrimonio temporal (mezzanine)"),
+
+    _c("minoritario_rescatable", [
+        "RedeemableNoncontrollingInterestEquityCarryingAmount",
+        "RedeemableNoncontrollingInterestEquityPreferredCarryingAmount",
+        "RedeemableNoncontrollingInterestEquityCommonCarryingAmount",
+    ], tipo="instante", descripcion="Participacion minoritaria rescatable"),
 
     _c("preferidas", [
         "PreferredStockValue",

@@ -175,6 +175,17 @@ BALANCE: dict[str, tuple[str, str, str]] = {
         "La suma historica de ganancias no distribuidas. Negativo quiere decir "
         "que la empresa perdio mas de lo que gano en toda su vida.",
     ),
+    "patrimonio_temporal": (
+        "Temporary (Mezzanine) Equity", "Patrimonio temporal",
+        "El renglon que va entre el pasivo y el patrimonio: instrumentos que la "
+        "empresa puede verse obligada a recomprar, como preferidas rescatables. "
+        "Por eso el activo no siempre es igual al pasivo mas el patrimonio.",
+    ),
+    "minoritario_rescatable": (
+        "Redeemable Noncontrolling Interest", "Participacion minoritaria rescatable",
+        "La parte de una filial que esta en manos de terceros y que ademas puede "
+        "exigir que se la compren. Tambien vive fuera del patrimonio.",
+    ),
     "patrimonio": (
         "Total Shareholders' Equity", "Patrimonio neto",
         "Activo menos pasivo. Lo que quedaria para los accionistas si se "
