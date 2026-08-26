@@ -615,6 +615,71 @@ def _factor_split(eventos: list[tuple[str, float]], presentado: str | None) -> f
     return factor
 
 
+# ----------------------------------------- arbitraje de la linea de ingresos
+
+# Cuanto puede alejarse un candidato del total implicito por el costo y la
+# ganancia bruta para seguir siendo "el mismo numero". Medio punto: alcanza para
+# el redondeo de presentacion y no para confundir dos lineas distintas.
+_TOL_IDENTIDAD_INGRESOS = 0.005
+
+
+def _arbitrar_ingresos(facts: dict, crudo: dict[int, dict], costo: dict[int, dict],
+                       bruta: dict[int, dict], mes_cierre: int | None) -> None:
+    """Corrige la linea de ingresos usando la aritmetica de la propia empresa.
+
+    Ninguna preferencia fija de etiquetas acierta en todos lados, y las dos
+    equivocaciones posibles son igual de invisibles:
+
+      - `RevenueFromContractWithCustomer...` es solo la venta bajo contrato, asi
+        que en una aseguradora o en una prestamista devuelve una fraccion del
+        total. CNA se veia diez veces mas chica.
+      - `Revenues` es el total cuando la empresa lo usa como tal, pero hay
+        emisores que lo etiquetan en una linea menor. American Superconductor
+        publica cero, y Apogee 72,7 M sobre un ejercicio de 934 M.
+
+    La empresa publica el desempate. `GrossProfit` y el costo de ventas salen de
+    etiquetas distintas de la de ingresos y estan impresos en la misma cara del
+    estado: su suma es el total. Cuando los tres estan, se recorren todos los
+    candidatos y gana el que cierra la cuenta, sin importar en que orden estaba.
+
+    Cuando la empresa no publica ganancia bruta —los bancos y las aseguradoras
+    no la publican— no hay con que desempatar y queda el orden de preferencia,
+    que para esos casos es el correcto.
+    """
+    if not costo or not bruta:
+        return
+
+    candidatos: dict[str, dict[int, dict]] = {}
+    for etiqueta in POR_CLAVE["ingresos"].etiquetas:
+        encontrados = _hechos_anuales(facts, etiqueta, POR_CLAVE["ingresos"], mes_cierre)
+        if encontrados:
+            candidatos[etiqueta] = encontrados
+
+    for anio, dato in crudo.items():
+        if anio not in costo or anio not in bruta:
+            continue
+        objetivo = costo[anio]["valor"] + bruta[anio]["valor"]
+        if not objetivo:
+            continue
+        if abs(dato["valor"] - objetivo) <= abs(objetivo) * _TOL_IDENTIDAD_INGRESOS:
+            continue  # el elegido ya cierra
+
+        for etiqueta, encontrados in candidatos.items():
+            hecho = encontrados.get(anio)
+            if hecho is None or hecho.get("val") is None:
+                continue
+            if abs(float(hecho["val"]) - objetivo) > abs(objetivo) * _TOL_IDENTIDAD_INGRESOS:
+                continue
+            dato.update({
+                "valor": float(hecho["val"]), "etiqueta": etiqueta,
+                "fin": hecho.get("end"), "forma": hecho.get("form"),
+                "presentado": hecho.get("filed"), "por_identidad": True,
+            })
+            break
+        # Si ningun candidato cierra, se deja el que estaba. No hay a quien
+        # creerle mas, y `validacion.py` lo marca para mirarlo a mano.
+
+
 # ------------------------------------------------- coherencia de escala
 
 # Cuanto puede apartarse un año del resto de su propia serie antes de tomarse
@@ -701,8 +766,13 @@ def fundamentals(ticker: str, anios: int | None = None) -> dict:
 
     mes_cierre = _mes_cierre_fiscal(facts)
 
+    # Los ingresos se arbitran despues, cuando ya estan el costo y la ganancia
+    # bruta con que compararlos. Se guardan sin publicar hasta entonces.
+    crudos: dict[str, dict[int, dict]] = {}
+
     for concepto in TODOS:
         crudo = serie_por_concepto(facts, concepto, rango, mes_cierre)
+        crudos[concepto.clave] = crudo
         if not crudo:
             faltantes.append(concepto.clave)
             continue
@@ -749,6 +819,19 @@ def fundamentals(ticker: str, anios: int | None = None) -> dict:
         series[concepto.clave] = {a: d["valor"] for a, d in crudo.items()}
         procedencia[concepto.clave] = {
             a: {k: v for k, v in d.items() if k != "valor"} for a, d in crudo.items()
+        }
+
+    # Con las tres lineas ya resueltas, la aritmetica de la empresa decide cual
+    # de las etiquetas de ingresos es la de su "Total revenue".
+    if "ingresos" in series:
+        crudo_ingresos = crudos["ingresos"]
+        _arbitrar_ingresos(facts, crudo_ingresos,
+                           crudos.get("costo_ventas") or {},
+                           crudos.get("ganancia_bruta") or {}, mes_cierre)
+        series["ingresos"] = {a: d["valor"] for a, d in crudo_ingresos.items()}
+        procedencia["ingresos"] = {
+            a: {k: v for k, v in d.items() if k != "valor"}
+            for a, d in crudo_ingresos.items()
         }
 
     # El EPS se contrasta contra la division que lo define. Va aca y no en el

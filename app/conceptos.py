@@ -256,6 +256,10 @@ BALANCE = [
 
     _c("minoritario", [
         "MinorityInterest",
+        # Constellation Brands consolida entidades de interes variable y informa
+        # esa porcion de terceros solo con esta etiqueta. Sin ella su balance no
+        # cerraba por 1,2% todos los años desde 2019.
+        "NoncontrollingInterestInVariableInterestEntity",
         # IFRS
         "NoncontrollingInterests",
     ], tipo="instante", descripcion="Participacion minoritaria"),
@@ -275,6 +279,7 @@ BALANCE = [
         "TemporaryEquityCarryingAmountIncludingPortionAttributableToNoncontrollingInterests",
         "TemporaryEquityCarryingAmountAttributableToParent",
         "TemporaryEquityValueExcludingAdditionalPaidInCapital",
+        "TemporaryEquityRedemptionValue",
     ], tipo="instante", descripcion="Patrimonio temporal (mezzanine)"),
 
     _c("minoritario_rescatable", [

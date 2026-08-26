@@ -122,11 +122,28 @@ def _resultados(series, procedencia, anio) -> Hallazgo | None:
 
 
 def _balance(series, procedencia, anio) -> Hallazgo | None:
-    """activo = pasivo + patrimonio (+ minoritario si el patrimonio no lo incluye).
+    """activo = pasivo + patrimonio, con los renglones de al lado que correspondan.
 
-    La ecuacion fundamental. Si no cierra, alguna de las tres patas vino de una
-    etiqueta que mide otra cosa: el caso tipico es un patrimonio que incluye o
-    excluye la participacion minoritaria al reves de lo que se supuso.
+    La ecuacion fundamental. Si no cierra de ninguna forma razonable, alguna de
+    las patas vino de una etiqueta que mide otra cosa.
+
+    "De ninguna forma razonable" hay que tomarlo en serio, porque entre el pasivo
+    y el patrimonio viven renglones cuya inclusion depende de como etiqueto la
+    empresa, y no siempre se puede saber por el nombre de la etiqueta:
+
+      - La participacion minoritaria esta adentro de `StockholdersEquity...
+        IncludingPortion...` y afuera de `StockholdersEquity`.
+      - El patrimonio temporal aparece a veces con una etiqueta, a veces con
+        otra, y a veces con las dos: Yalla informa los mismos 25,9 M como
+        `TemporaryEquityCarryingAmountAttributableToParent` y como
+        `RedeemableNoncontrollingInterestEquityPreferredCarryingAmount`. Sumar
+        las dos cuenta el renglon dos veces y rompe un balance que cierra.
+
+    Asi que en vez de decidir de antemano cual va, se prueban las lecturas
+    posibles y basta con que UNA cierre. Es un control, no un calculo: la
+    pregunta que responde es si el balance se puede explicar, y si se puede, no
+    hay nada que avisar. Que varias combinaciones cierren por casualidad, con la
+    tolerancia de medio punto, no pasa.
     """
     activo = _v(series, "activo_total", anio)
     pasivo = _v(series, "pasivo_total", anio)
@@ -134,36 +151,31 @@ def _balance(series, procedencia, anio) -> Hallazgo | None:
     if activo is None or pasivo is None or patrimonio is None:
         return None
 
-    # `StockholdersEquity` es solo la parte de los accionistas de la matriz: para
-    # cerrar contra el activo hay que sumarle el minoritario aparte. La variante
-    # `...IncludingPortionAttributableToNoncontrollingInterest` ya lo trae
-    # adentro, y sumarlo otra vez lo contaria dos veces.
     etiqueta = _etiqueta(procedencia, "patrimonio", anio)
-    if "IncludingPortion" not in etiqueta and etiqueta != "Equity":
-        patrimonio += _v(series, "minoritario", anio) or 0.0
-
-    # El patrimonio temporal va aparte de las dos patas, por definicion. Misma
-    # precaucion con el doble conteo: si la etiqueta del mezzanine ya incluye la
-    # porcion de terceros, el minoritario rescatable esta adentro.
+    minoritario = _v(series, "minoritario", anio) or 0.0
     temporal = _v(series, "patrimonio_temporal", anio) or 0.0
-    if "IncludingPortion" not in _etiqueta(procedencia, "patrimonio_temporal", anio):
-        temporal += _v(series, "minoritario_rescatable", anio) or 0.0
+    rescatable = _v(series, "minoritario_rescatable", anio) or 0.0
 
-    esperado = pasivo + patrimonio + temporal
-    if not _rompe(esperado, activo, _TOL_BALANCE):
+    # Cada lectura posible del tramo que va entre el pasivo y el patrimonio.
+    extras = {0.0, temporal, rescatable, temporal + rescatable}
+    if "IncludingPortion" not in etiqueta and etiqueta != "Equity":
+        extras |= {m + minoritario for m in set(extras)}
+
+    mejor = min((pasivo + patrimonio + extra for extra in extras),
+                key=lambda e: abs(activo - e))
+    if not _rompe(mejor, activo, _TOL_BALANCE):
         return None
 
     return Hallazgo(
         anio=anio,
         identidad="Activo = pasivo + patrimonio",
         severidad="grave",
-        esperado=esperado,
+        esperado=mejor,
         obtenido=activo,
         detalle=(
             f"Pasivo {pasivo / 1e6:,.0f} M mas patrimonio "
-            f"{patrimonio / 1e6:,.0f} M"
-            + (f" mas {temporal / 1e6:,.0f} M de patrimonio temporal" if temporal else "")
-            + f" dan {esperado / 1e6:,.0f} M, pero el activo total leido es "
+            f"{patrimonio / 1e6:,.0f} M dan {mejor / 1e6:,.0f} M en la lectura "
+            f"que mas se acerca, pero el activo total leido es "
             f"{activo / 1e6:,.0f} M. El patrimonio salio de `{etiqueta}`."
         ),
     )

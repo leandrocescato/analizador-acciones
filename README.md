@@ -331,8 +331,22 @@ El resultado no era un error visible. Era un número del orden correcto, y menor
 | CNA Financial (CNA) | 1.577 M | **14.989 M** | primas de seguro |
 
 CNA es la medida del agujero: una aseguradora se veía **diez veces más chica**
-de lo que es. Ahora va primero `Revenues`, que es la etiqueta del total, la
-línea "Total revenue" de la cara del estado.
+de lo que es.
+
+Invertir el orden y poner `Revenues` primero no alcanza, porque la equivocación
+simétrica existe: hay emisores que etiquetan `Revenues` en una línea menor.
+American Superconductor publica cero y Apogee 72,7 M sobre un ejercicio de
+934 M. Ninguna preferencia fija acierta en los dos casos.
+
+El desempate lo publica la empresa. `GrossProfit` y el costo de ventas salen de
+etiquetas distintas y están impresos en la misma cara del estado: **su suma es
+el total**. Cuando los tres están, se recorren todos los candidatos y gana el
+que cierra la cuenta, sin importar en qué orden estaba — así Apogee vuelve sola
+a `SalesRevenueNet`. Cuando la empresa no publica ganancia bruta (los bancos y
+las aseguradoras no la publican) manda el orden de preferencia, con `Revenues`
+primero, que para esos casos es el correcto. Y si ningún candidato cierra, se
+deja el elegido y el control de coherencia lo marca: inventar un reemplazo sería
+peor.
 
 ### Las cuentas tienen que cerrar, y ahora se controla que cierren
 

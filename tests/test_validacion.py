@@ -128,11 +128,69 @@ def test_hallazgos_ordenados_por_gravedad_y_despues_por_año():
 # --------------------------------------- el orden de las etiquetas de ingresos
 
 def test_revenues_gana_a_la_etiqueta_de_contratos():
-    # `Revenues` es el total de la cara del estado; la de contratos es solo la
-    # parte bajo ASC 606. Si el orden se invierte, vuelve el error de BE.
+    # Sin nada con que desempatar, `Revenues` es el total de la cara del estado
+    # y la de contratos solo la parte bajo ASC 606. Si el orden se invierte,
+    # vuelve el error de BE.
     etiquetas = POR_CLAVE["ingresos"].etiquetas
     assert etiquetas.index("Revenues") < etiquetas.index(
         "RevenueFromContractWithCustomerExcludingAssessedTax")
+
+
+def _facts_ingresos(**por_etiqueta: float) -> dict:
+    return facts_de(us_gaap={
+        etiqueta: bloque(hecho(valor, start="2015-01-01", end="2015-12-31"))
+        for etiqueta, valor in por_etiqueta.items()
+    })
+
+
+def _crudo(valor: float, etiqueta: str) -> dict:
+    return {2015: {"valor": valor, "etiqueta": etiqueta}}
+
+
+def test_la_identidad_corrige_una_etiqueta_de_ingresos_que_no_es_el_total():
+    # Apogee: `Revenues` trae 72,7 M sobre un ejercicio de 934 M. El costo y la
+    # ganancia bruta que publica la empresa apuntan a `SalesRevenueNet`.
+    facts = _facts_ingresos(Revenues=72.7e6, SalesRevenueNet=933.9e6)
+    crudo = _crudo(72.7e6, "Revenues")
+    edgar._arbitrar_ingresos(
+        facts, crudo, _crudo(725.4e6, "CostOfGoodsSold"),
+        _crudo(208.5e6, "GrossProfit"), mes_cierre=12)
+    assert crudo[2015]["etiqueta"] == "SalesRevenueNet"
+    assert crudo[2015]["valor"] == 933.9e6
+    assert crudo[2015]["por_identidad"] is True
+
+
+def test_la_identidad_no_toca_lo_que_ya_cierra():
+    facts = _facts_ingresos(Revenues=934e6, SalesRevenueNet=900e6)
+    crudo = _crudo(934e6, "Revenues")
+    edgar._arbitrar_ingresos(
+        facts, crudo, _crudo(725.5e6, "CostOfGoodsSold"),
+        _crudo(208.5e6, "GrossProfit"), mes_cierre=12)
+    assert crudo[2015]["etiqueta"] == "Revenues"
+    assert "por_identidad" not in crudo[2015]
+
+
+def test_si_ningun_candidato_cierra_se_deja_el_que_estaba():
+    # LendingTree: la ganancia bruta que publica no forma la identidad con
+    # ninguna linea de ingresos. Inventar un reemplazo seria peor; queda el
+    # elegido y `validacion.py` lo marca.
+    facts = _facts_ingresos(Revenues=1_117e6)
+    crudo = _crudo(1_117e6, "Revenues")
+    edgar._arbitrar_ingresos(
+        facts, crudo, _crudo(42.5e6, "CostOfRevenue"),
+        _crudo(352e6, "GrossProfit"), mes_cierre=12)
+    assert crudo[2015]["valor"] == 1_117e6
+    assert "por_identidad" not in crudo[2015]
+
+
+def test_sin_ganancia_bruta_no_hay_arbitraje():
+    # Bancos y aseguradoras no publican ganancia bruta: ahi manda el orden de
+    # preferencia, que para ese caso es el correcto.
+    facts = _facts_ingresos(Revenues=14_989e6,
+                            RevenueFromContractWithCustomerExcludingAssessedTax=1_577e6)
+    crudo = _crudo(14_989e6, "Revenues")
+    edgar._arbitrar_ingresos(facts, crudo, {}, {}, mes_cierre=12)
+    assert crudo[2015]["valor"] == 14_989e6
 
 
 # ------------------------------------------------- instantes fuera del cierre
