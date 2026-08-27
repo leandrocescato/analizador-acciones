@@ -133,6 +133,44 @@ def test_sin_diagnostico_solo_mira_las_vigentes():
     assert [c["ticker"] for c in radar.sin_diagnostico(estado)] == ["AAA"]
 
 
+def test_la_que_fallo_vuelve_a_estar_pendiente():
+    # Un timeout de la corrida de anoche no puede dejar a la candidata sin
+    # explicacion para siempre: lo que la saca de la cola es tener texto.
+    estado = _estado([_candidata("AAA", vigente=True,
+                                 diagnostico={"error": "se corto el tiempo"})])
+    assert [c["ticker"] for c in radar.sin_diagnostico(estado)] == ["AAA"]
+
+
+# --------------------------------------------- la columna Causa entera vacia
+
+
+def test_un_radar_recien_barrido_nunca_se_diagnostico():
+    estado = _estado([_candidata("AAA", vigente=True),
+                      _candidata("BBB", vigente=True)])
+    assert radar.nunca_diagnosticado(estado) is True
+
+
+def test_con_una_sola_diagnosticada_ya_no_es_nunca():
+    # Que le falte a 78 de 79 es normal. Que le falte a las 79 quiere decir
+    # otra cosa, y es lo unico que el aviso tiene que distinguir.
+    estado = _estado([_candidata("AAA", vigente=True, diagnostico={"texto": "algo"}),
+                      _candidata("BBB", vigente=True)])
+    assert radar.nunca_diagnosticado(estado) is False
+
+
+def test_un_intento_fallido_cuenta_como_corrida():
+    # El mecanismo esta enchufado y lo que fallo fue esa llamada: mandarlo a
+    # revisar los secretos de GitHub seria mandarlo al lugar equivocado.
+    estado = _estado([_candidata("AAA", vigente=True,
+                                 diagnostico={"error": "no contesto"})])
+    assert radar.nunca_diagnosticado(estado) is False
+
+
+def test_un_radar_vacio_no_dispara_el_aviso_de_diagnostico():
+    # Sin candidatas el problema es otro, y ya tiene su propio mensaje.
+    assert radar.nunca_diagnosticado(_estado()) is True
+
+
 # ------------------------------------------------------------------ escalas
 
 

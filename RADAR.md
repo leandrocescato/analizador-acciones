@@ -43,7 +43,14 @@ deterioro estructural, ciclo del sector, hecho puntual, contabilidad o gobierno,
 arrastre de mercado.
 
 Se pide **una sola vez por empresa** y queda guardado. Es lo que evita pagar dos
-veces por la misma respuesta.
+veces por la misma respuesta. Si una falla, vuelve a la cola: lo que la saca es
+tener párrafo, no haberlo intentado.
+
+**Sin esperar a mañana.** En la barra lateral del Radar hay un panel
+*Diagnóstico* que dice cuántas están pendientes y las corre ahí mismo, de a
+tandas. Guarda después de **cada una**, no al final: si a la quinta cerrás la
+pestaña, las cuatro anteriores ya están en el Gist. Perder llamadas que ya
+consumieron cuota por no haber guardado sería la peor forma de gastarla.
 
 ---
 
@@ -257,6 +264,8 @@ Lo descartado se rehabilita desde la barra lateral.
 | El Radar aparece vacío en la app | La app no está leyendo el Gist. Te falta `.streamlit/secrets.toml` con `github_token` y `gist_id`. Mientras tanto, **Barrer ahora** trabaja contra el archivo local |
 | La Action dice OK pero el Gist no cambia | El `GIST_TOKEN` no tiene el permiso **Account → Gists → Read and write**, o venció |
 | Las candidatas llegan sin párrafo | Falta `CLAUDE_CODE_OAUTH_TOKEN`, o el token venció, o se te acabó la cuota del plan. El log del paso 2 lo dice. Es el modo de falla buscado: antes que gastar de más, no escribe |
+| **La columna Causa está vacía en TODAS** | El diagnóstico no corrió nunca. La página te lo dice con todas las letras cuando pasa. O te faltan los tres secretos del paso 2, o corriste el workflow con `sin_diagnostico` tildado. Para llenarla ahora: panel *Diagnóstico* de la barra lateral |
+| Una sola fila sin Causa | Normal: a esa todavía no le tocó. El tope por corrida es 8 |
 | El paso 2 falla por autenticación | Probá el token localmente con `claude` antes de debuggear el workflow. Si igual falla, instalá la [GitHub App de Claude](https://github.com/apps/claude) y sacá la línea `github_token` |
 | Se diagnostican menos de las que esperabas | Es el tope de 8 por corrida. Subilo en *Run workflow* o en el `default` del workflow |
 | Entran demasiadas candidatas | Apretá el filtro: Altman Z > 3, o variación 52 semanas < -25% |

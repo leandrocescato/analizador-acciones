@@ -413,6 +413,28 @@ def quitar(estado: dict, ticker: str) -> dict:
 
 
 def sin_diagnostico(estado: dict) -> list[dict]:
-    """Las vigentes a las que todavia nadie les escribio el por que."""
+    """Las vigentes a las que todavia nadie les escribio el por que.
+
+    Una que fallo vuelve a estar pendiente: lo que la saca de la cola es tener
+    texto, no haberlo intentado. Un timeout de la corrida de anoche no puede
+    dejar a la candidata sin explicacion para siempre.
+    """
     return [c for c in (estado.get("candidatas") or [])
             if c.get("vigente") and not (c.get("diagnostico") or {}).get("texto")]
+
+
+def nunca_diagnosticado(estado: dict) -> bool:
+    """Si el diagnostico no corrio NUNCA sobre este radar.
+
+    No es lo mismo que una candidata sin diagnostico. Una celda vacia en la
+    columna Causa es normal —esa todavia no le toco—; la columna entera vacia
+    quiere decir que el paso que la llena no existe todavia, y eso no se
+    adivina mirando una tabla llena de guiones. Un intento fallido cuenta como
+    corrida: significa que el mecanismo esta enchufado y lo que fallo fue esa
+    llamada.
+    """
+    for c in estado.get("candidatas") or []:
+        diag = c.get("diagnostico") or {}
+        if diag.get("texto") or diag.get("error"):
+            return False
+    return True

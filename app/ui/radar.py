@@ -84,6 +84,69 @@ def _barrer_ahora(estado: dict) -> None:
     st.toast(f"{len(nuevo['candidatas'])} candidatas ({total} pasaron el filtro).")
 
 
+def _diagnosticar_tanda(estado: dict, cuantas: int) -> None:
+    """Diagnostica las primeras `cuantas` pendientes, de a una y guardando.
+
+    Se guarda despues de CADA una y no al final. Un diagnostico tarda un par de
+    minutos; si a la quinta se corta la conexion o cerras la pestaña, las cuatro
+    anteriores ya estan en el Gist. Perder cuatro llamadas ya pagadas por no
+    haber guardado seria la peor forma de gastar la cuota.
+    """
+    pendientes = radar.sin_diagnostico(estado)[:cuantas]
+    if not pendientes:
+        st.toast("No hay ninguna pendiente.")
+        return
+
+    barra = st.progress(0.0, text="Preparando...")
+    hechas = fallidas = 0
+    for i, candidata in enumerate(pendientes):
+        ticker = candidata["ticker"]
+        barra.progress(i / len(pendientes),
+                       text=f"Buscando que le paso a {ticker} ({i + 1} de {len(pendientes)})...")
+        resultado = diagnostico.diagnosticar(candidata)
+        candidata["diagnostico"] = resultado
+        _guardar(estado)
+        if resultado.get("texto"):
+            hechas += 1
+        else:
+            fallidas += 1
+    barra.empty()
+
+    aviso = f"{hechas} diagnosticada(s)."
+    if fallidas:
+        aviso += f" {fallidas} fallaron: abrilas para ver que dijo."
+    st.session_state["radar_aviso"] = aviso
+
+
+def _panel_diagnostico(estado: dict) -> None:
+    """El control que llena la columna Causa sin esperar a la corrida de la noche."""
+    pendientes = radar.sin_diagnostico(estado)
+    st.subheader("Diagnostico")
+
+    ok, motivo = diagnostico.disponible()
+    if not ok:
+        st.caption(motivo)
+        return
+
+    if not pendientes:
+        st.caption("Todas las candidatas vigentes ya tienen el suyo.")
+        return
+
+    st.caption(
+        f"{len(pendientes)} sin diagnosticar. Cada una es una llamada a Claude "
+        "con buscador web: tarda un par de minutos y sale de tu cuota del plan, "
+        "no de una factura aparte. Por eso el tope de a poco.")
+    cuantas = st.number_input(
+        "Cuantas ahora", min_value=1, max_value=min(len(pendientes), 20),
+        value=min(3, len(pendientes)), step=1, key="radar_cuantas_diag",
+        help="Van en orden de la lista. Las que no entren quedan para la "
+             "proxima tanda o para la corrida de la noche.")
+    if st.button(f"Diagnosticar {int(cuantas)}", width="stretch",
+                 icon=":material/psychology:"):
+        _diagnosticar_tanda(estado, int(cuantas))
+        st.rerun()
+
+
 # ------------------------------------------------------------------ barra lateral
 
 
@@ -266,6 +329,9 @@ def render():
                           "para probar un filtro nuevo sin esperar a mañana."):
             _barrer_ahora(estado)
             st.rerun()
+        st.divider()
+        _panel_diagnostico(estado)
+        st.divider()
         _panel_filtros(estado)
         st.divider()
         _panel_descartadas(estado)
@@ -289,6 +355,24 @@ def render():
         if pendientes:
             resumen.append(f"{pendientes} sin diagnostico")
         st.markdown(" · ".join(resumen))
+
+    # La columna Causa vacia en TODA la tabla no es lo mismo que una celda
+    # vacia: quiere decir que el diagnostico no corrio nunca, y eso no se
+    # adivina mirando una columna de guiones.
+    if candidatas and radar.nunca_diagnosticado(estado):
+        ok, motivo = diagnostico.disponible()
+        st.info(
+            "**La columna Causa esta vacia porque el diagnostico todavia no "
+            "corrio ninguna vez.** El barrido encuentra las candidatas; el "
+            "parrafo que explica por que cayo cada una lo escribe Claude "
+            "aparte, y eso todavia no paso.\n\n"
+            + ("Podes lanzarlo ahora desde **Diagnostico**, en la barra "
+               "lateral. Sale de tu cuota del plan.\n\n"
+               if ok else f"Desde esta maquina no se puede: {motivo}\n\n")
+            + "Para que se llene sola todas las noches faltan los tres "
+              "secretos en GitHub (`GIST_TOKEN`, `GIST_ID` y "
+              "`CLAUDE_CODE_OAUTH_TOKEN`): el paso 2 de `RADAR.md`.",
+            icon=":material/psychology_alt:")
 
     if not candidatas:
         st.info(
