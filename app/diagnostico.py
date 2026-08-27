@@ -13,21 +13,25 @@ UNA cosa: que averigue por que cayo y lo clasifique. No opina sobre si comprar
 tampoco valua. Es el paso previo: el que te dice si vale la pena que le dediques
 la tarde, y en que enfocar la lectura cuando se la dediques.
 
-DOS MOTORES, Y POR QUE EL ORDEN ES ESE
---------------------------------------
-1. `claude` (Claude Code, el CLI que ya tenes instalado). Corre con tu
-   suscripcion Pro: no cuesta un peso aparte, sale de la misma cuota de uso que
-   tus sesiones de Claude Code. Es el que se usa siempre que este disponible.
-2. La API de Anthropic. Se factura APARTE del Pro, asi que esta APAGADA: no
-   se enciende sola por tener la clave en el entorno, hay que pedirlo con
-   `RADAR_PERMITIR_API=1`. Existe solo para una maquina sin Claude Code.
+UN SOLO MOTOR, Y ES A PROPOSITO
+-------------------------------
+`claude`, el CLI de Claude Code que ya esta instalado. Corre con la suscripcion:
+sale de la misma cuota de uso que cualquier sesion de Claude Code, y no hay
+factura aparte.
+
+Aca no hay un camino por la API de Anthropic, y no es un olvido. La API se
+factura por separado de la suscripcion, asi que existir ya la hacia posible: una
+variable de entorno mal puesta, un dia distraido, y la app factura sin avisar.
+Hubo una version con ese camino apagado con llave y funcionaba, pero un seguro
+que hay que revisar es peor que no tener nada que asegurar. Si no esta el CLI,
+no hay diagnostico: el barrido guarda las candidatas sin parrafo y lo dice.
 
 En la nube pasa lo mismo por otro camino: la Action no usa este modulo, usa la
 Claude Code GitHub Action con tu token OAuth, que tambien come de la
-suscripcion. Ver RADAR.md.
+suscripcion. Tampoco recibe ninguna clave de API. Ver RADAR.md.
 
-SIN NINGUNO DE LOS DOS NO PASA NADA
------------------------------------
+SIN EL CLI NO PASA NADA
+-----------------------
 El barrido igual corre y guarda las candidatas con todos sus numeros. Lo unico
 que falta es el parrafo. La app lo dice y sigue andando.
 """
@@ -36,7 +40,6 @@ from __future__ import annotations
 
 import datetime as dt
 import json
-import os
 import re
 import shutil
 import subprocess
@@ -96,46 +99,14 @@ def _cli() -> str | None:
     return shutil.which("claude")
 
 
-# EL SEGURO CONTRA UNA FACTURA QUE NO PEDISTE
-# -------------------------------------------
-# La regla de esta herramienta es que el diagnostico NO cuesta un peso por
-# encima de la suscripcion. El camino por la API la rompe: se factura aparte.
-#
-# Por eso no alcanza con tener una ANTHROPIC_API_KEY en el entorno para que se
-# use. Muchas herramientas dejan esa variable puesta, y bastaba con eso para
-# que un boton de la app empezara a facturar en silencio. Hay que prenderlo a
-# mano, y prenderlo es una decision explicita:
-#
-#     RADAR_PERMITIR_API=1
-#
-# Sin eso, si no hay Claude Code, no hay diagnostico. Que falte el parrafo es
-# molesto; una factura sorpresa, no.
-PERMISO_API = "RADAR_PERMITIR_API"
-
-
-def _api_habilitada() -> bool:
-    return os.environ.get(PERMISO_API, "").strip().lower() in ("1", "true", "si", "yes")
-
-
 def backend() -> tuple[str | None, str]:
-    """(motor a usar, motivo si no hay ninguno)."""
+    """(motor a usar, motivo si no hay ninguno). Motor hay uno solo."""
     if _cli():
         return "claude-code", ""
-
-    if not _api_habilitada():
-        return None, ("No se encontro el comando `claude`. El diagnostico corre "
-                      "con tu suscripcion, y sin Claude Code no hay de donde "
-                      "sacarlo. (El camino por la API existe pero se factura "
-                      f"aparte: hay que habilitarlo a mano con {PERMISO_API}=1.)")
-
-    if not os.environ.get("ANTHROPIC_API_KEY"):
-        return None, (f"{PERMISO_API} esta prendido pero falta ANTHROPIC_API_KEY.")
-    try:
-        import anthropic  # noqa: F401
-    except ImportError:
-        return None, ("Hay ANTHROPIC_API_KEY pero falta el paquete: "
-                      "`pip install -r requirements-radar.txt`.")
-    return "api", ""
+    return None, ("No se encontro el comando `claude`. El diagnostico corre con "
+                  "tu suscripcion, y sin Claude Code no hay de donde sacarlo. "
+                  "No hay un camino alternativo a proposito: el unico que "
+                  "habria se factura aparte de la suscripcion.")
 
 
 def disponible() -> tuple[bool, str]:
@@ -261,73 +232,6 @@ def _via_cli(candidata: dict) -> dict:
     return _armar(texto, "claude-code", datos.get("total_cost_usd"))
 
 
-# ------------------------------------------------------------------ motor: API
-
-
-def _via_api(candidata: dict) -> dict:
-    import anthropic
-
-    cliente = anthropic.Anthropic()
-    try:
-        respuesta = cliente.messages.create(
-            model=MODELO,
-            max_tokens=8000,
-            system=_instrucciones(),
-            thinking={"type": "adaptive"},
-            output_config={"effort": "medium"},
-            tools=[{"type": "web_search_20260209", "name": "web_search",
-                    "max_uses": 5}],
-            messages=[{"role": "user", "content": _pedido(candidata)}],
-        )
-    except Exception as exc:  # red, tarifa, clave vencida: todo termina igual
-        return {"error": f"{type(exc).__name__}: {str(exc)[:200]}"}
-
-    if respuesta.stop_reason == "refusal":
-        return {"error": "El modelo declino contestar sobre esta empresa."}
-
-    texto = "\n".join(b.text for b in respuesta.content if b.type == "text").strip()
-    if not texto:
-        return {"error": "Respuesta vacia del modelo."}
-
-    salida = _armar(texto, "api")
-    # Las de la API son mejores: salen de los bloques de resultado, no de
-    # como el modelo decidio citarlas en el texto.
-    salida["fuentes"] = _fuentes_api(respuesta) or salida["fuentes"]
-    salida["costo"] = _costo_api(respuesta.usage)
-    return salida
-
-
-def _fuentes_api(respuesta) -> list[dict]:
-    """Los articulos que efectivamente leyo, para poder ir a la fuente.
-
-    Un error de busqueda NO levanta excepcion: llega como un bloque de
-    resultado cuyo contenido, en vez de la lista de siempre, es un objeto con
-    el codigo de error. Por eso el isinstance antes de recorrerlo.
-    """
-    salida = []
-    for bloque in respuesta.content:
-        if bloque.type != "web_search_tool_result":
-            continue
-        if not isinstance(bloque.content, list):
-            continue
-        for resultado in bloque.content:
-            if getattr(resultado, "type", "") == "web_search_result":
-                salida.append({"titulo": (resultado.title or "")[:120],
-                               "url": resultado.url})
-    vistas, unicas = set(), []
-    for f in salida:
-        if f["url"] not in vistas:
-            vistas.add(f["url"])
-            unicas.append(f)
-    return unicas[:5]
-
-
-def _costo_api(usage) -> float:
-    """Dolares a precio de lista de Claude Opus 5."""
-    return (usage.input_tokens / 1_000_000 * 5.00
-            + usage.output_tokens / 1_000_000 * 25.00)
-
-
 # ------------------------------------------------------------------ entrada
 
 
@@ -342,7 +246,7 @@ def diagnosticar(candidata: dict) -> dict:
     motor, motivo = backend()
     if motor is None:
         return {"error": motivo}
-    return _via_cli(candidata) if motor == "claude-code" else _via_api(candidata)
+    return _via_cli(candidata)
 
 
 # ------------------------------------------------------------------ la corrida en la nube

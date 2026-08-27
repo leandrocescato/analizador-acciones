@@ -207,29 +207,53 @@ def test_el_precio_sobre_valor_libro_no_se_calcula_con_patrimonio_negativo():
 # ------------------------------------------------------------------ el candado del gasto
 
 
-def test_la_api_no_se_prende_sola_por_tener_la_clave_en_el_entorno(monkeypatch):
+def test_no_existe_ningun_camino_por_la_api(monkeypatch):
     """La regla es que el diagnostico no cuesta un peso arriba de la suscripcion.
 
-    Una ANTHROPIC_API_KEY suelta en el entorno —muchas herramientas la dejan
-    puesta— alcanzaba para que la app empezara a facturar aparte sin decir nada.
-    Ahora hace falta pedirlo a mano.
+    Antes habia un camino por la API de Anthropic apagado con llave: no se
+    encendia solo por tener una ANTHROPIC_API_KEY suelta en el entorno, hacia
+    falta pedirlo a mano. Funcionaba, y aun asi se saco. Un seguro que hay que
+    revisar es peor que no tener nada que asegurar: mientras el codigo exista,
+    alguna combinacion de variables de entorno puede llegar a el.
+
+    Este test es la version ejecutable de esa decision. Si alguien vuelve a
+    agregar el camino, falla.
     """
     from app import diagnostico
 
-    monkeypatch.setattr(diagnostico, "_cli", lambda: None)  # sin Claude Code
+    monkeypatch.setattr(diagnostico, "_cli", lambda: None)
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-loquesea")
-    monkeypatch.delenv(diagnostico.PERMISO_API, raising=False)
+    monkeypatch.setenv("RADAR_PERMITIR_API", "1")
 
     motor, motivo = diagnostico.backend()
-    assert motor is None, "se prendio la API sin que nadie la habilitara"
-    assert diagnostico.PERMISO_API in motivo
+    assert motor is None, "aparecio un motor que no es la suscripcion"
+    assert motivo, "tiene que explicar por que no hay diagnostico"
 
 
-def test_con_claude_code_nunca_se_mira_la_api(monkeypatch):
+def test_el_modulo_no_importa_la_api_de_anthropic():
+    # Sobre el arbol sintactico y no sobre el texto: el docstring del modulo
+    # nombra la API para explicar por que NO esta, y eso tiene que poder
+    # escribirse sin romper el test.
+    import ast
+    import inspect
+
+    from app import diagnostico
+
+    arbol = ast.parse(inspect.getsource(diagnostico))
+    importados = set()
+    for nodo in ast.walk(arbol):
+        if isinstance(nodo, ast.Import):
+            importados |= {a.name.split(".")[0] for a in nodo.names}
+        elif isinstance(nodo, ast.ImportFrom) and nodo.module:
+            importados.add(nodo.module.split(".")[0])
+
+    assert "anthropic" not in importados
+    assert not hasattr(diagnostico, "_via_api")
+    assert not hasattr(diagnostico, "PERMISO_API")
+
+
+def test_con_claude_code_el_motor_es_la_suscripcion(monkeypatch):
     from app import diagnostico
 
     monkeypatch.setattr(diagnostico, "_cli", lambda: "/usr/bin/claude")
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-loquesea")
-    monkeypatch.setenv(diagnostico.PERMISO_API, "1")
-
     assert diagnostico.backend() == ("claude-code", "")

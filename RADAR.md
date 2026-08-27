@@ -193,18 +193,26 @@ intención: está sostenida en el código y en el workflow.
 | Dónde | Con qué se autentica | Puede facturar aparte |
 |---|---|---|
 | La Action diaria | `CLAUDE_CODE_OAUTH_TOKEN` | **No.** El workflow no recibe ninguna `ANTHROPIC_API_KEY` ni instala el paquete `anthropic`: no tiene con qué |
-| El botón de la app | El comando `claude`, con tu sesión | **No.** El camino por API está apagado con llave |
+| El botón de la app | El comando `claude`, con tu sesión | **No.** No existe otro camino en el código |
 
-El camino por la API existe, pero **no se enciende solo**. Tener una
-`ANTHROPIC_API_KEY` en el entorno no alcanza: hay que pedirlo explícitamente con
-`RADAR_PERMITIR_API=1`. Sin eso, una máquina sin Claude Code guarda las
-candidatas sin párrafo y lo dice, que es preferible a una factura sorpresa.
+**No hay ningún camino por la API de Anthropic.** Hubo uno, apagado con llave:
+no se encendía solo por tener una `ANTHROPIC_API_KEY` en el entorno, había que
+pedirlo a mano. Funcionaba, y aun así se sacó. Un seguro que hay que revisar es
+peor que no tener nada que asegurar: mientras el código exista, alguna
+combinación de variables de entorno puede llegar a él. Si no está el comando
+`claude`, no hay diagnóstico — el barrido guarda las candidatas sin párrafo y lo
+dice. Hay un test que falla si alguien vuelve a agregarlo.
 
-Lo que sí gastás es **cuota de uso del Pro**, la misma de tus sesiones de Claude
-Code. Y no es poco: **del orden de USD 0,60 de equivalente por candidata**,
-medido sobre una corrida real (QFIN, Opus 5, siete búsquedas, 134 segundos). Ese
-número no es un cargo — es lo que habría costado por API — pero es la vara para
-estimar cuánta cuota consume.
+Lo que sí consumís es **cuota de uso del Pro**, la misma de tus sesiones de
+Claude Code. Cuando se agota, esperás al reset; no se convierte en un cargo.
+
+Claude Code informa cada corrida con un número en dólares (`total_cost_usd`) y
+la app lo guarda en el campo `costo`. **Ese número no es una factura**: es lo que
+esa misma llamada habría costado por API, y sirve para una cosa sola, que es
+tener una vara de cuánta cuota consume cada candidata. Medido sobre tres
+corridas reales con Opus 5 y búsqueda web: QFIN 0,52 · DEC 0,92 · TREE 1,04, dos
+a tres minutos cada una. Léelo como "TREE consume el doble que QFIN", nunca como
+un peso a pagar.
 
 Por eso el tope por corrida arranca en **8**, no en quince. Si querés medir el
 impacto sobre tu propio uso antes de soltarlo, arrancá en **3** las primeras
@@ -212,8 +220,8 @@ corridas y subilo cuando veas que no te aprieta.
 
 La cuenta que importa es esta:
 
-- **La primera semana es la cara.** Hoy hay ~40 candidatas sin diagnosticar; a 8
-  por día, cinco días para ponerse al día.
+- **La primera semana es la cara.** Hoy hay ~70 candidatas sin diagnosticar; a 8
+  por día, nueve días para ponerse al día.
 - **Después es barato.** En régimen entran dos a cinco nuevas por día, porque
   las que ya estaban conservan su párrafo.
 
@@ -292,6 +300,5 @@ python scripts/radar_diario.py --max-diagnosticos 3
 
 Busca el comando `claude` en el PATH y lo corre en modo no interactivo, en un
 directorio temporal para no arrastrarle el `CLAUDE.md` de este proyecto. Si no
-lo encuentra, prueba con la API de Anthropic (`ANTHROPIC_API_KEY` más
-`pip install -r requirements-radar.txt`), y si tampoco, guarda las candidatas
-sin párrafo y lo dice.
+lo encuentra, guarda las candidatas sin párrafo y lo dice: no hay un segundo
+motor al que caer.
