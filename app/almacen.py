@@ -52,7 +52,7 @@ UNIVERSO_INICIAL = ["META", "NVDA", "TSLA", "AAPL", "GOOGL", "NU"]
 
 # El mismo secreto tiene dos origenes segun donde corra la app: los secretos de
 # Streamlit cuando es la interfaz, y variables de entorno cuando es el barrido
-# diario de GitHub Actions, que no tiene secrets.toml. Los nombres de entorno
+# de GitHub Actions, que no tiene secrets.toml. Los nombres de entorno
 # son propios a proposito: `GITHUB_TOKEN` ya significa otra cosa adentro de una
 # Action y usarlo aca haria que el barrido intentara escribir el gist con un
 # token que no tiene permiso para hacerlo.
@@ -207,7 +207,7 @@ def guardar_nota(ticker: str, texto: str) -> None:
 # ------------------------------------------------------------------ radar
 
 # El radar es la unica de las tres cosas guardadas que NO la escribis vos: la
-# escribe el barrido diario. Va al mismo gist igual, y por el mismo motivo. Si
+# escribe el barrido. Va al mismo gist igual, y por el mismo motivo. Si
 # viviera solo en el disco, cada reinicio de Streamlit Cloud borraria las
 # candidatas del dia y el telefono mostraria un radar vacio hasta la corrida
 # siguiente. Ademas es lo que conecta las dos mitades: la Action escribe, la

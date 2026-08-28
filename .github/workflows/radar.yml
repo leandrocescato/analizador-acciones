@@ -1,8 +1,15 @@
-# Barrido diario del radar.
+# Barrido del radar, a pedido.
 #
-# Corre en los servidores de GitHub, este la laptop prendida o no. No toca el
-# repositorio: el resultado va al Gist privado, que es de donde lee la app. Si
-# algo falla, GitHub te manda un mail con el log.
+# NO tiene `schedule`, y es una decision, no un olvido. Un barrido automatico
+# todas las noches acumula candidatas mas rapido de lo que uno las mira, y el
+# diagnostico de cada una consume cuota del plan aunque esa semana no tengas
+# ganas de buscar nada. Se corre cuando lo necesitas y no antes.
+#
+# Corre en los servidores de GitHub, este la laptop prendida o no: es la
+# diferencia con los botones de la app, que necesitan la maquina abierta los
+# veinte minutos que tarda una tanda. No toca el repositorio: el resultado va al
+# Gist privado, que es de donde lee la app. Si algo falla, GitHub te manda un
+# mail con el log.
 #
 # Son tres pasos, y el reparto entre ellos es la decision de diseño:
 #
@@ -14,14 +21,10 @@
 # el runner y listo. Asi una corrida rara del paso 2 no puede romper el radar:
 # lo peor que pasa es que el paso 3 ignore un archivo mal escrito.
 
-name: Radar diario
+name: Radar a pedido
 
 on:
-  schedule:
-    # 10:00 UTC = 07:00 en Argentina. De martes a sabado, porque cada corrida
-    # mira el cierre del dia habil anterior: el sabado trae el cierre del
-    # viernes y el lunes no hay nada nuevo que mirar.
-    - cron: "0 10 * * 2-6"
+  # Solo a mano: Actions -> Radar a pedido -> Run workflow.
   workflow_dispatch:
     inputs:
       sin_diagnostico:
@@ -63,7 +66,7 @@ jobs:
           GIST_TOKEN: ${{ secrets.GIST_TOKEN }}
           GIST_ID: ${{ secrets.GIST_ID }}
         run: |
-          python scripts/radar_diario.py \
+          python scripts/radar_barrido.py \
             --sin-diagnostico \
             --exportar-pendientes datos/pendientes.md \
             --max-diagnosticos "${{ inputs.max_diagnosticos || '8' }}"
@@ -91,7 +94,7 @@ jobs:
       #
       # `always()` a proposito: si el agente se quedo sin cuota a mitad de
       # camino, lo que alcanzo a escribir se guarda igual. El resto queda
-      # pendiente y lo toma la corrida de mañana.
+      # pendiente para la corrida siguiente, cuando la pidas.
       - name: Aplicar los diagnosticos al radar
         if: ${{ always() && inputs.sin_diagnostico != true }}
         env:

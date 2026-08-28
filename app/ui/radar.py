@@ -3,7 +3,11 @@ Hoja 3 — Radar.
 
 Las otras dos hojas contestan preguntas sobre empresas que vos elegiste mirar.
 Esta trae empresas que no elegiste: es la unica parte de la app que sale a
-buscar sola, todos los dias, y deja una lista corta esperandote.
+buscar al mercado entero y deja una lista corta esperandote.
+
+Se corre a pedido, no en automatico. Un barrido agendado acumula candidatas mas
+rapido de lo que uno las mira, y el diagnostico de cada una consume cuota del
+plan aunque esa semana no estes buscando nada.
 
 La bandeja de entrada de la cartera. Cada candidata tiene tres salidas y
 ninguna es quedarse: al universo, al descarte, o la dejas y la resolves mañana.
@@ -32,8 +36,8 @@ COLUMNAS = {
     "Causa": st.column_config.TextColumn(
         "Causa", width="medium",
         help="Como clasifico Claude el motivo de la caida. Un guion es que "
-             "todavia nadie la diagnostico: lo hace el barrido de la noche, o "
-             "vos con el boton de la ficha."),
+             "todavia nadie la diagnostico: se pide desde el panel Diagnostico "
+             "de la barra lateral, o desde la ficha de cada candidata."),
     "PER": st.column_config.NumberColumn("PER", format="%.1fx"),
     "EPS": st.column_config.NumberColumn("EPS", format="$%.2f"),
     "P/VL": st.column_config.NumberColumn("P/VL", format="%.2fx"),
@@ -119,7 +123,7 @@ def _diagnosticar_tanda(estado: dict, cuantas: int) -> None:
 
 
 def _panel_diagnostico(estado: dict) -> None:
-    """El control que llena la columna Causa sin esperar a la corrida de la noche."""
+    """El control que llena la columna Causa."""
     pendientes = radar.sin_diagnostico(estado)
     st.subheader("Diagnostico")
 
@@ -139,8 +143,8 @@ def _panel_diagnostico(estado: dict) -> None:
     cuantas = st.number_input(
         "Cuantas ahora", min_value=1, max_value=min(len(pendientes), 20),
         value=min(3, len(pendientes)), step=1, key="radar_cuantas_diag",
-        help="Van en orden de la lista. Las que no entren quedan para la "
-             "proxima tanda o para la corrida de la noche.")
+        help="Van en orden de la lista. Las que no entren quedan pendientes "
+             "para la proxima tanda.")
     if st.button(f"Diagnosticar {int(cuantas)}", width="stretch",
                  icon=":material/psychology:"):
         _diagnosticar_tanda(estado, int(cuantas))
@@ -153,9 +157,9 @@ def _panel_diagnostico(estado: dict) -> None:
 def _panel_filtros(estado: dict) -> None:
     st.subheader("Filtros del barrido")
     st.caption(
-        "Es el corte que corre todas las noches. Los que estan en blanco estan "
+        "Es el corte que aplica cada barrido. Los que estan en blanco estan "
         "apagados. Se guardan donde se guarda todo lo tuyo, asi que la corrida "
-        "automatica usa exactamente esto.")
+        "en GitHub usa exactamente esto.")
 
     guardados = radar.normalizar(estado.get("filtros"))
     nuevos = {}
@@ -178,7 +182,7 @@ def _panel_filtros(estado: dict) -> None:
         estado = dict(estado)
         estado["filtros"] = nuevos
         _guardar(estado)
-        st.toast("Filtros guardados. El barrido de esta noche los usa.")
+        st.toast("Filtros guardados. El proximo barrido los usa.")
         st.rerun()
 
 
@@ -224,8 +228,8 @@ def _ficha(estado: dict, candidata: dict) -> None:
     elif diag.get("error"):
         st.warning(f"El diagnostico fallo: {diag['error']}", icon=":material/error:")
     else:
-        st.caption("Todavia sin diagnostico. El barrido de esta noche se lo pide, "
-                   "o pedilo ahora con el boton de abajo.")
+        st.caption("Todavia sin diagnostico. Pedilo con el boton de abajo, o "
+                   "de a varias desde el panel Diagnostico de la barra lateral.")
 
     # ------------------------------------------------------------ acciones
     acciones = st.container(horizontal=True, vertical_alignment="center")
@@ -310,7 +314,7 @@ def _tabla(candidatas: list[dict]) -> pd.DataFrame:
 def render():
     st.title("Radar")
     st.caption(
-        "Candidatas que el barrido diario encontro en el mercado de EE.UU. "
+        "Candidatas que el ultimo barrido encontro en el mercado de EE.UU. "
         "**Los numeros de esta tabla son del screener de Yahoo**, que sirve "
         "para elegir a cual mirar. Los de verdad, calculados con EDGAR, "
         "aparecen cuando la abris en el Detalle."
@@ -325,8 +329,8 @@ def render():
 
     with st.sidebar:
         if st.button("Barrer ahora", width="stretch", icon=":material/radar:",
-                     help="Corre el mismo barrido que corre solo de noche. Sirve "
-                          "para probar un filtro nuevo sin esperar a mañana."):
+                     help="Sale a buscar candidatas nuevas al mercado entero "
+                          "con los filtros de abajo. Tarda un minuto."):
             _barrer_ahora(estado)
             st.rerun()
         st.divider()
@@ -369,9 +373,9 @@ def render():
             + ("Podes lanzarlo ahora desde **Diagnostico**, en la barra "
                "lateral. Sale de tu cuota del plan.\n\n"
                if ok else f"Desde esta maquina no se puede: {motivo}\n\n")
-            + "Para que se llene sola todas las noches faltan los tres "
-              "secretos en GitHub (`GIST_TOKEN`, `GIST_ID` y "
-              "`CLAUDE_CODE_OAUTH_TOKEN`): el paso 2 de `RADAR.md`.",
+            + "La otra forma es correr el workflow **Radar a pedido** en "
+              "GitHub: hace lo mismo en sus servidores, con la laptop apagada. "
+              "Ninguna de las dos corre sola: el radar no tiene nada agendado.",
             icon=":material/psychology_alt:")
 
     if not candidatas:

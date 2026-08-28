@@ -38,7 +38,7 @@ def main():
             "Vista", ["Panel", "Detalle", "Radar"], key="pagina",
             label_visibility="collapsed",
             captions=["Una fila por accion", "Analisis profundo de una empresa",
-                      "Candidatas que trajo el barrido diario"],
+                      "Candidatas que trajo el ultimo barrido"],
         )
         st.divider()
 

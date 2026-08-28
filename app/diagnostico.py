@@ -63,7 +63,7 @@ CAUSAS = [
 
 # Las reglas del trabajo. Viven en un solo lugar porque las usan los dos
 # caminos: este modulo cuando pedis un diagnostico desde la app, y el archivo
-# de instrucciones que arma `briefing()` para la corrida diaria en la nube.
+# de instrucciones que arma `briefing()` para la corrida en la nube.
 INSTRUCCIONES = """Sos un analista de renta variable que trabaja para un
 inversor deep value contrarian. El te va a decir si compra o no: vos no
 recomendas, no valuas y no ponderas si esta cara o barata. Tu unico trabajo es
@@ -238,10 +238,10 @@ def _via_cli(candidata: dict) -> dict:
 def diagnosticar(candidata: dict) -> dict:
     """Un diagnostico para una candidata. Nunca levanta: los errores se guardan.
 
-    Que devuelva el error en vez de explotar es a proposito. El barrido diario
-    corre solo, de noche, sobre quince empresas: que una cuota agotada o una
-    busqueda caida corte la corrida entera y te deje sin radar seria el peor
-    intercambio posible.
+    Que devuelva el error en vez de explotar es a proposito. Una tanda corre
+    sobre varias empresas seguidas: que una cuota agotada o una busqueda caida
+    corte la tanda entera y te deje sin radar seria el peor intercambio
+    posible.
     """
     motor, motivo = backend()
     if motor is None:
@@ -290,7 +290,7 @@ def briefing(pendientes: list[dict], carpeta_salida: str) -> str:
         "",
         "Trabaja empresa por empresa y escribi cada archivo apenas la termines, no",
         "todos al final: si te quedas sin tiempo o sin cuota, lo ya escrito se",
-        "guarda igual y el resto queda para mañana.",
+        "guarda igual y el resto queda para la proxima corrida.",
         "",
         f"## Las {len(pendientes)} de hoy",
         "",

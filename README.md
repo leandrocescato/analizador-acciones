@@ -4,7 +4,7 @@ Aplicación local para análisis fundamental de acciones de EE.UU. con enfoque
 *deep value*. Tres vistas: un **Panel** con una fila por acción para barrer el
 universo, un **Detalle** con estados contables, evolución histórica y valuación
 para las que merecen una tarde entera, y un **Radar** que sale a buscar
-candidatas nuevas al mercado, solo, una vez por día.
+candidatas nuevas al mercado entero cuando se lo pedís.
 
 Los estados contables salen de **SEC EDGAR** (XBRL auditado, 15 años). Los datos
 de mercado, de **Yahoo Finance**, con Stooq como respaldo. Sin claves de API:
@@ -180,8 +180,9 @@ comprar una *value trap*:
 La bandeja de entrada. Las otras dos vistas analizan empresas que elegiste vos;
 esta trae empresas que no elegiste.
 
-Una vez por día, en GitHub Actions, el barrido le pide al **screener de Yahoo**
-las empresas de NYSE y Nasdaq que pasan tus filtros —el preset de fábrica es
+Cuando lo corrés —desde la barra lateral, o con *Run workflow* en GitHub
+Actions— el barrido le pide al **screener de Yahoo** las empresas de NYSE y
+Nasdaq que pasan tus filtros —el preset de fábrica es
 deep value castigado: PER < 14, EPS > 0, ROE > 8%, deuda/EBITDA < 3,5x y abajo
 en el año—, descarta las que ya tenés y las que ya rechazaste, y a las nuevas
 les pide a **Claude, con buscador web**, un párrafo que conteste por qué están
@@ -196,10 +197,13 @@ que verificar en los estados contables para saber si se revierte.
 
 Cada candidata tiene tres salidas —**al universo**, **al Detalle** sin sumarla,
 o **descartada**— y lo descartado no vuelve a aparecer, que es lo que evita que
-el radar se convierta en la misma lista todos los días.
+el radar se convierta en la misma lista de siempre.
 
-Los filtros se editan desde la barra lateral y la corrida de esa noche usa lo
-que dejaste puesto. Puesta en marcha, costos y diagnóstico de fallas:
+**Nada corre solo.** Hubo un `cron` que barría todas las mañanas y se sacó: un
+barrido automático acumula candidatas más rápido de lo que uno las mira, y el
+diagnóstico de cada una consume cuota del plan aunque esa semana no estés
+buscando nada. Los filtros se editan desde la barra lateral y la próxima corrida
+usa lo que dejaste puesto. Puesta en marcha, costos y diagnóstico de fallas:
 **[RADAR.md](RADAR.md)**.
 
 ---
@@ -259,7 +263,7 @@ app/
   modelo.py            Empresa: une fundamentals + mercado, deriva series
   ui/                  Panel, Detalle, Radar, gráficos, DCF inverso
 scripts/
-  radar_diario.py      el barrido que corre solo en GitHub Actions
+  radar_barrido.py     el barrido, a pedido: local o en GitHub Actions
   radar_aplicar.py     mezcla al radar lo que escribió el agente
 ```
 

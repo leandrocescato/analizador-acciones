@@ -2,9 +2,9 @@
 
 Lo que se prueba aca no es el barrido —eso es una llamada a Yahoo y no tiene
 sentido probarlo sin red— sino `fusionar`, que es donde el radar puede
-arruinarse en silencio. Si pierde la memoria, el barrido diario te ofrece todos
-los dias las mismas empresas que ya rechazaste, o vuelve a pagarle a Claude por
-un diagnostico que ya estaba escrito. Ninguna de las dos cosas rompe nada: solo
+arruinarse en silencio. Si pierde la memoria, el barrido te vuelve a ofrecer las
+empresas que ya rechazaste, o le vuelve a pedir a Claude un diagnostico que ya
+estaba escrito. Ninguna de las dos cosas rompe nada: solo
 hacen que la herramienta deje de servir.
 """
 
@@ -71,7 +71,7 @@ def test_el_diagnostico_y_la_fecha_de_alta_sobreviven_a_la_corrida_siguiente():
     assert guardada["diagnostico"] == diag, "habria que pagar el diagnostico de nuevo"
 
 
-def test_los_numeros_si_se_actualizan_todos_los_dias():
+def test_los_numeros_si_se_actualizan_en_cada_corrida():
     previo = _estado([_candidata(per=8.0, fecha_alta=HOY, visto=HOY)])
     nuevo = radar.fusionar(previo, [_candidata(per=6.0)], [], {})
     assert nuevo["candidatas"][0]["per"] == 6.0
@@ -134,7 +134,7 @@ def test_sin_diagnostico_solo_mira_las_vigentes():
 
 
 def test_la_que_fallo_vuelve_a_estar_pendiente():
-    # Un timeout de la corrida de anoche no puede dejar a la candidata sin
+    # Un timeout de la corrida anterior no puede dejar a la candidata sin
     # explicacion para siempre: lo que la saca de la cola es tener texto.
     estado = _estado([_candidata("AAA", vigente=True,
                                  diagnostico={"error": "se corto el tiempo"})])

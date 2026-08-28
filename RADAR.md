@@ -1,37 +1,51 @@
 # El Radar
 
 La tercera hoja de la app. Las otras dos analizan empresas que vos elegiste; el
-Radar sale a buscarlas solo, una vez por día, y te deja una lista corta
-esperando.
+Radar sale a buscarlas al mercado entero y te deja una lista corta esperando.
+Se corre a pedido: no hay nada agendado.
 
 Son dos piezas que no se conocen entre sí:
 
-- **El barrido**, que corre en GitHub Actions todas las mañanas y escribe el
-  resultado en tu Gist privado.
+- **El barrido**, que corre en GitHub Actions cuando lo pedís, o desde la
+  barra lateral de la app, y escribe el resultado en tu Gist privado.
 - **La hoja Radar** de la app, que lee ese Gist y te deja aprobar o descartar.
 
 ---
 
-## Qué hace cada mañana
+## Qué hace cuando lo corrés
 
 La corrida son **tres pasos**, y el reparto entre ellos es la decisión de diseño
 que sostiene todo lo demás:
 
 | Paso | Quién | Qué hace |
 |---|---|---|
-| 1. Barrer | Python (`scripts/radar_diario.py`) | Determinista: filtra el mercado, cruza contra tu universo y tus descartes, **guarda** |
+| 1. Barrer | Python (`scripts/radar_barrido.py`) | Determinista: filtra el mercado, cruza contra tu universo y tus descartes, **guarda** |
 | 2. Diagnosticar | Claude Code (la Action) | Agente con buscador: escribe un JSON por empresa |
 | 3. Aplicar | Python (`scripts/radar_aplicar.py`) | Determinista: valida esos JSON y los mezcla al radar |
 
 **El agente nunca toca el almacén ni ve el token del Gist.** Escribe archivos en
 el runner y listo. Por eso una corrida rara del paso 2 no puede romper nada: lo
 peor que pasa es que el paso 3 ignore un archivo mal escrito y esa empresa quede
-pendiente para mañana. Está probado con JSON roto, con etiquetas inventadas y
-con tickers que ya no están en el radar.
+pendiente para la próxima. Está probado con JSON roto, con etiquetas inventadas
+y con tickers que ya no están en el radar.
 
 El paso 1 guarda **antes** de que el paso 2 empiece. Si el agente se queda sin
-cuota a mitad de camino, las candidatas del día ya están a salvo, y el paso 3
-corre igual (`if: always()`) para no perder lo que sí alcanzó a escribir.
+cuota a mitad de camino, las candidatas ya están a salvo, y el paso 3 corre
+igual (`if: always()`) para no perder lo que sí alcanzó a escribir.
+
+### Nada corre solo
+
+**El radar no tiene nada agendado.** Hubo un `cron` que barría todas las mañanas
+y se sacó: un barrido automático acumula candidatas más rápido de lo que uno las
+mira, y el diagnóstico de cada una consume cuota del plan aunque esa semana no
+estés buscando nada. Se corre cuando lo necesitás.
+
+Hay dos formas, y la diferencia es dónde corre:
+
+| | Dónde | Cuándo conviene |
+|---|---|---|
+| **Barrer ahora** y **Diagnosticar N**, en la barra lateral de la hoja Radar | Tu laptop | Para una tanda corta, o para probar un filtro nuevo |
+| *Actions* → **Radar a pedido** → *Run workflow* | Servidores de GitHub | Para una tanda larga: no te ata la máquina los veinte minutos que tarda |
 
 ### El diagnóstico
 
@@ -144,24 +158,19 @@ Los nombres tienen que ser **exactamente** esos: son los que lee
 
 ### 3. La primera corrida, a mano
 
-*Actions* → **Radar diario** → *Run workflow*. Marcá **sin_diagnostico** la
+*Actions* → **Radar a pedido** → *Run workflow*. Marcá **sin_diagnostico** la
 primera vez: confirma que el Gist se escribe sin gastar nada de cuota. Si el log
-termina en `Guardado en gist privado`, ya está. Sacale la marca y corré de nuevo
-para ver los diagnósticos.
+termina en `Guardado en gist privado`, ya está. Sacale la marca, poné
+`max_diagnosticos: 2` y corré de nuevo para ver los diagnósticos.
 
-De ahí en más sale solo a las **7 de la mañana**, de martes a sábado (cada
-corrida mira el cierre del día hábil anterior).
-
-> GitHub apaga los `cron` de un repositorio público que pase 60 días sin
-> actividad. Si un día el radar deja de actualizarse solo, es lo primero a
-> revisar.
+De ahí en más, cuando quieras. No hay `cron`: si no lo corrés, no pasa nada.
 
 ---
 
 ## Los filtros
 
 Se editan en la barra lateral de la hoja Radar y se guardan en el mismo Gist,
-así que **la corrida de esa noche usa lo que dejaste puesto**. No hay que tocar
+así que **la corrida en GitHub usa lo que dejaste puesto**. No hay que tocar
 código ni volver a desplegar nada.
 
 El preset de fábrica es deep value castigado:
@@ -192,7 +201,7 @@ intención: está sostenida en el código y en el workflow.
 
 | Dónde | Con qué se autentica | Puede facturar aparte |
 |---|---|---|
-| La Action diaria | `CLAUDE_CODE_OAUTH_TOKEN` | **No.** El workflow no recibe ninguna `ANTHROPIC_API_KEY` ni instala el paquete `anthropic`: no tiene con qué |
+| La Action, cuando la corrés | `CLAUDE_CODE_OAUTH_TOKEN` | **No.** El workflow no recibe ninguna `ANTHROPIC_API_KEY` ni instala el paquete `anthropic`: no tiene con qué |
 | El botón de la app | El comando `claude`, con tu sesión | **No.** No existe otro camino en el código |
 
 **No hay ningún camino por la API de Anthropic.** Hubo uno, apagado con llave:
@@ -285,7 +294,7 @@ Lo descartado se rehabilita desde la barra lateral.
 ## Correrlo a mano desde la laptop
 
 ```bash
-python scripts/radar_diario.py --sin-diagnostico
+python scripts/radar_barrido.py --sin-diagnostico
 ```
 
 Sin nada configurado escribe `datos/radar.json` y la app lo lee de ahí. Es la
@@ -295,7 +304,7 @@ el botón **Barrer ahora** de la barra lateral.
 Con diagnóstico, y usando tu suscripción igual que en la nube:
 
 ```bash
-python scripts/radar_diario.py --max-diagnosticos 3
+python scripts/radar_barrido.py --max-diagnosticos 3
 ```
 
 Busca el comando `claude` en el PATH y lo corre en modo no interactivo, en un

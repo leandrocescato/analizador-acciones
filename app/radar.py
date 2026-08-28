@@ -1,5 +1,5 @@
 """
-Radar: el barrido diario que sale a buscar candidatas al mercado entero.
+Radar: el barrido que sale a buscar candidatas al mercado entero, a pedido.
 
 POR QUE NO SE USA EDGAR ACA
 ---------------------------
@@ -298,7 +298,7 @@ def completar_perfil(candidatas: list[dict], barra=None) -> int:
             # CORTE: si nada entra al principio, Yahoo esta rechazando esta IP
             # —lo normal cuando la app corre en la nube— y seguir es esperar
             # ochenta veces por la misma negativa. Las candidatas quedan sin
-            # sector, que se muestra como un guion, y la corrida diaria (que
+            # sector, que se muestra como un guion, y la corrida en GitHub (que
             # sale de otra IP) los completa.
             if fallos >= FALLOS_PARA_CORTAR and completadas == 0:
                 for pendiente in futuros:
@@ -314,14 +314,14 @@ def fusionar(previo: dict, encontradas: list[dict], universo: list[str],
              filtros: dict, total: int = 0) -> dict:
     """Mezcla el barrido de hoy con lo que ya habia.
 
-    Tres cosas tienen que sobrevivir a la corrida diaria:
+    Tres cosas tienen que sobrevivir a cada barrido:
 
     1. La fecha en que una candidata aparecio por primera vez. Sin eso no se
        distingue la que entro hoy de la que llevas dos semanas sin mirar.
-    2. El diagnostico ya escrito. Volver a pedirlo todos los dias seria pagarle
+    2. El diagnostico ya escrito. Volver a pedirlo en cada barrido seria pagarle
        a Claude de nuevo por la misma respuesta.
     3. Las que descartaste. Una accion barata sigue estando barata mañana: sin
-       memoria, el barrido te ofreceria lo que ya rechazaste, todos los dias,
+       memoria, el barrido te ofreceria lo que ya rechazaste, cada vez,
        para siempre.
     """
     hoy = dt.date.today().isoformat()
@@ -416,7 +416,7 @@ def sin_diagnostico(estado: dict) -> list[dict]:
     """Las vigentes a las que todavia nadie les escribio el por que.
 
     Una que fallo vuelve a estar pendiente: lo que la saca de la cola es tener
-    texto, no haberlo intentado. Un timeout de la corrida de anoche no puede
+    texto, no haberlo intentado. Un timeout de la corrida anterior no puede
     dejar a la candidata sin explicacion para siempre.
     """
     return [c for c in (estado.get("candidatas") or [])

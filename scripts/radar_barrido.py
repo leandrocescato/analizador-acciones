@@ -1,14 +1,19 @@
 """
-El barrido diario. Lo corre GitHub Actions una vez por dia, sin nadie mirando.
+El barrido del radar. Se corre a pedido: no hay nada agendado que lo dispare.
 
-    python scripts/radar_diario.py                    # barrido y diagnostico
-    python scripts/radar_diario.py --sin-diagnostico  # solo los numeros
-    python scripts/radar_diario.py --sin-diagnostico --exportar-pendientes datos/pendientes.md
+Lo corre GitHub Actions cuando apretas *Run workflow*, o vos desde la laptop.
+Antes tenia un cron todas las mañanas y se saco: un barrido automatico acumula
+candidatas mas rapido de lo que uno las mira, y el diagnostico de cada una
+consume cuota del plan aunque esa semana no estes buscando nada.
+
+    python scripts/radar_barrido.py                    # barrido y diagnostico
+    python scripts/radar_barrido.py --sin-diagnostico  # solo los numeros
+    python scripts/radar_barrido.py --sin-diagnostico --exportar-pendientes datos/pendientes.md
 
 Que hace, en orden:
 
   1. Lee del gist los filtros que dejaste puestos en la app y las candidatas de
-     ayer, con sus descartes.
+     la corrida anterior, con sus descartes.
   2. Le pide al screener de Yahoo las que pasan el filtro hoy.
   3. Mezcla: las nuevas entran, las que ya estaban conservan su fecha y su
      diagnostico, las que descartaste no vuelven.
@@ -16,7 +21,7 @@ Que hace, en orden:
   5. El por que de cada candidata nueva, por uno de dos caminos:
 
      - En tu laptop, con `--max-diagnosticos`: los pide aca mismo, uno por uno,
-       via Claude Code o via API (ver `app/diagnostico.py`).
+       via Claude Code, con tu suscripcion (ver `app/diagnostico.py`).
      - En la nube, con `--exportar-pendientes`: NO los pide. Deja escrito el
        encargo en un archivo y termina. El que los escribe es el paso siguiente
        del workflow, que es la Claude Code GitHub Action corriendo con tu
@@ -40,7 +45,7 @@ CARPETA_DIAGNOSTICOS = "datos/diagnosticos"
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Barrido diario del radar.")
+    ap = argparse.ArgumentParser(description="Barrido del radar, a pedido.")
     ap.add_argument("--sin-diagnostico", action="store_true",
                     help="No pide el por que. Solo trae las candidatas.")
     ap.add_argument("--max-diagnosticos", type=int, default=8,
@@ -143,7 +148,7 @@ def _diagnosticar(estado: dict, tope: int) -> bool:
     recortadas = _por_prioridad(pendientes)[:tope]
     if len(pendientes) > tope:
         print(f"  ({len(pendientes)} pendientes, se hacen {tope} por el tope "
-              f"de la corrida. El resto queda para mañana.)")
+              f"de la corrida. El resto queda para la proxima.)")
 
     costo, escritos = 0.0, 0
     for i, candidata in enumerate(recortadas, 1):
